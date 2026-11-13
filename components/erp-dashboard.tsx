@@ -224,10 +224,25 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
     const demo = [['MP-101', 'Harina especial', 'lb', 30, 22, 'Factura 001'], ['MP-102', 'Azúcar blanca', 'lb', 8, 20, 'Factura 001'], ['MP-103', 'Margarina', 'lb', 8, 55, 'Factura 002'], ['MP-104', 'Huevos', 'unidad', 60, 6, 'Factura 002'], ['MP-105', 'Levadura', 'lb', 1.5, 90, 'Factura 003']] as const
     setMaterials(demo.map(([code, name, unit, qty, cost]) => ({ id: code, name, code, unit, stock: code === 'MP-101' ? qty + 4.5 : qty, cost })))
     setMovements(demo.map(([code, name, unit, qty, cost, ref], i) => ({ id: Date.now() + i, date: stamp, type: 'Entrada' as const, code, material: name, qty, unit, total: qty * cost, ref })).reverse())
-    setRecords({ ...initial, 'BOM / Recetas': initial['BOM / Recetas'].map((r) => ({ ...r, data: { ...r.data!, ingredients: 'MP-101=12\nMP-102=3\nMP-103=3\nMP-104=24\nMP-105=0.5' } })) })
+    const sampleProducts = [
+      { id: 'P-001', name: 'Gemelos', code: 'GEM-000', breadType: 'Repostería', units: '80', price: '180' },
+      { id: 'P-002', name: 'Pan francés', code: 'PAN-001', breadType: 'Pan tradicional', units: '100', price: '10' },
+      { id: 'P-003', name: 'Pan dulce', code: 'PAN-002', breadType: 'Pan dulce', units: '60', price: '15' },
+      { id: 'P-004', name: 'Concha de vainilla', code: 'REP-001', breadType: 'Repostería', units: '48', price: '25' },
+      { id: 'P-005', name: 'Croissant', code: 'REP-002', breadType: 'Repostería', units: '36', price: '35' },
+      { id: 'P-006', name: 'Queque de vainilla', code: 'REP-003', breadType: 'Queques', units: '12', price: '350' },
+    ].map(({ id, name, code, breadType, units, price }) => ({
+      id,
+      name,
+      code,
+      detail: `${breadType} · ${units} und/lote · C$ ${price}`,
+      status: 'Activo',
+      data: { name, code, breadType, units, price },
+    }))
+    setRecords({ ...initial, Productos: sampleProducts, 'BOM / Recetas': initial['BOM / Recetas'].map((r) => ({ ...r, data: { ...r.data!, ingredients: 'MP-101=12\nMP-102=3\nMP-103=3\nMP-104=24\nMP-105=0.5' } })) })
     setOrders(initialOrders)
     setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([]); setBilling({ quotes: [], invoices: [], payments: [], creditNotes: [] })
-    notify('Datos de ejemplo cargados: ahora finaliza las dos órdenes')
+    notify('Datos de ejemplo cargados: 6 productos y materias primas. Ahora finaliza las dos órdenes')
   }
   const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 4000) }
   useEffect(() => {
