@@ -36,6 +36,7 @@ Los recursos devuelven registros en JSON. Las listas usan `page` (predeterminado
 | Clientes (`/api/customers`) | GET, POST; GET, PATCH, DELETE por `/{id}` |
 | Movimientos (`/api/inventory-movements`) | GET, POST; GET por `/{id}` |
 | Órdenes de producción (`/api/production-orders`) | GET, POST; GET, PATCH por `/{id}` |
+| Espacio de trabajo del ERP (`/api/workspace`) | GET, PUT; requiere sesión iniciada |
 | Dashboard (`/api/dashboard`) | GET |
 | Salud (`/api/health`) | GET; comprueba la conexión a PostgreSQL |
 | Usuarios (`/api/users`) | GET, POST; GET, PATCH, DELETE por `/{id}`; requiere sesión de administrador |
@@ -48,6 +49,13 @@ Los movimientos son inmutables: solo se pueden consultar o crear. Las órdenes
 de producción se actualizan únicamente cambiando `status` (`Pendiente`, `En
 proceso`, `Finalizada` o `Cancelada`); no se eliminan por API. Las respuestas de
 errores siguen el formato `{ "error": { "code": "...", "message": "..." } }`.
+
+El dashboard guarda el estado operativo y de facturación en `/api/workspace`,
+protegido por la sesión del usuario. La escritura usa control de versión
+optimista; si otra sesión modifica el espacio de trabajo, el servidor responde
+`409 version_conflict` y se debe recargar antes de continuar. Para operaciones
+programáticas y acceso por recurso, se mantienen los endpoints individuales
+protegidos por API key descritos arriba.
 
 Los endpoints de usuarios usan la sesión HttpOnly obtenida al iniciar sesión y
 no la API key general. Solo administradores pueden usarlos. Las contraseñas se

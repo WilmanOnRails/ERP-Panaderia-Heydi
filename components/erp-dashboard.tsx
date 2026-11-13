@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Archive, Bell, Boxes, ChevronDown, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download } from 'lucide-react'
+import { Archive, Bell, Boxes, ChevronDown, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download, FileText, CreditCard, Receipt } from 'lucide-react'
+import { BillingModule } from '@/components/billing-module'
+import type { BillingData } from '@/components/billing-module'
 
 type OrderStatus = 'Pendiente' | 'En proceso' | 'Finalizada' | 'Cancelada'
 type RecordItem = { id: string; name: string; code?: string; detail: string; status: string; data?: Record<string, string> }
@@ -11,7 +13,7 @@ type Material = { id: string; name: string; code: string; unit: string; stock: n
 type QcAction = 'Liberación' | 'Retrabajo' | 'Retorno retrabajo' | 'Scrap'
 type QcBuckets = { pending: number; rework: number }
 type QcRecord = { id: string; date: string; product: string; action: QcAction; qty: number; from: string; reason: string; value: number }
-type MovementType = 'Entrada' | 'Consumo' | 'Producción' | 'Venta' | 'Despacho' | QcAction
+type MovementType = 'Entrada' | 'Consumo' | 'Producción' | 'Venta' | 'Despacho' | 'Devolución' | QcAction
 type Movement = { id: number; date: string; type: MovementType; code: string; material: string; qty: number; unit: string; total: number; ref: string }
 type PurchaseStatus = 'Pendiente' | 'Recibida parcial' | 'Recibida' | 'Cancelada'
 type PurchaseLine = { code: string; qty: number; cost: number; received: number }
@@ -61,6 +63,7 @@ const groups = [
   { label: 'Panel principal', items: [['Dashboard', LayoutDashboard]] },
   { label: 'Datos maestros', items: [['Productos', Package], ['Materias primas', ShoppingBasket], ['BOM / Recetas', ClipboardList], ['Rutas de producción', Factory], ['Almacenes', Archive], ['Proveedores', Truck], ['Clientes', Users]] },
   { label: 'Compras', items: [['Órdenes de compra', ClipboardList], ['Recepción de material', Truck]] },
+  { label: 'Facturación', items: [['Cotizaciones', FileText], ['Facturación', Receipt], ['Registro de pagos', CreditCard], ['Devoluciones y notas de crédito', ClipboardList]] },
   { label: 'Inventario', items: [['Existencias', Boxes], ['Entradas', Plus], ['Salidas', Package], ['Movimientos', ClipboardList]] },
   { label: 'Producción', items: [['Órdenes de producción', Factory], ['Disponibilidad de materiales', Boxes], ['Consumo de materias primas', ShoppingBasket], ['Seguimiento de operaciones', ClipboardList], ['Productos terminados', Package], ['Calidad y liberación', CheckCircle2]] },
   { label: 'Reportes', items: [['Reportes de gestión', ClipboardList]] },
@@ -104,13 +107,108 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
   const [expandedGroup, setExpandedGroup] = useState('Panel principal')
   const [purchases, setPurchases] = useState<Purchase[]>([]); const [sales, setSales] = useState<Sale[]>([]); const [productStock, setProductStock] = useState<Record<string, number>>({}); const [purchaseDraft, setPurchaseDraft] = useState<{ code: string; qty: number }[] | null>(null)
   const [qc, setQc] = useState<Record<string, QcBuckets>>({}); const [qcRequired, setQcRequired] = useState<Record<string, boolean>>({}); const [qcLog, setQcLog] = useState<QcRecord[]>([])
-  // Persistencia: los datos se guardan en el navegador (localStorage) y sobreviven a recargas de la página
+  const [billing, setBilling] = useState<BillingData>({ quotes: [], invoices: [], payments: [], creditNotes: [] })
+  const [workspaceError, setWorkspaceError] = useState('')
+  const workspaceVersion = useRef(0)
+  const saveQueue = useRef(Promise.resolve())
   useEffect(() => {
-    try { const raw = window.localStorage.getItem('erp-heydi-datos'); if (raw) { const saved = JSON.parse(raw); if (saved.records) { const { 'Usuarios y roles': _users, ...savedRecords } = saved.records; setRecords(savedRecords) } if (saved.orders) setOrders(saved.orders); if (saved.materials) setMaterials(saved.materials); if (saved.movements) setMovements(saved.movements); if (saved.purchases) setPurchases(saved.purchases); if (saved.sales) setSales(saved.sales); if (saved.productStock) setProductStock(saved.productStock); if (saved.qc) setQc(saved.qc); if (saved.qcRequired) setQcRequired(saved.qcRequired); if (saved.qcLog) setQcLog(saved.qcLog) } } catch { }
-    setLoaded(true)
+    let cancelled = false
+    void (async () => {
+      const response = await fetch('/api/workspace', { cache: 'no-store' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error?.message ?? 'No se pudieron cargar los datos del ERP.')
+      if (cancelled) return
+      let saved = result.data && typeof result.data === 'object' && !Array.isArray(result.data) ? result.data as Record<string, unknown> : {}
+      let version = Number.isSafeInteger(result.version) ? result.version : 0
+      if (version === 0 && Object.keys(saved).length === 0) {
+        let legacyData: string | null = null
+        let legacyBilling: string | null = null
+        try {
+          legacyData = window.localStorage.getItem('erp-heydi-datos')
+          legacyBilling = window.localStorage.getItem('erp-heydi-facturacion')
+        } catch {
+          // Browser storage may be disabled; the server workspace remains the source of truth.
+        }
+        if (legacyData || legacyBilling) {
+          const legacy = legacyData ? JSON.parse(legacyData) as Record<string, unknown> : {}
+          const legacyBillingData = legacyBilling ? JSON.parse(legacyBilling) as Partial<BillingData> : {}
+          const legacyRecords = legacy.records && typeof legacy.records === 'object' && !Array.isArray(legacy.records)
+            ? legacy.records as Record<string, unknown>
+            : {}
+          const { 'Usuarios y roles': _users, ...savedRecords } = legacyRecords as Record<string, RecordItem[]>
+          saved = {
+            ...legacy,
+            records: savedRecords,
+            billing: {
+              quotes: Array.isArray(legacyBillingData.quotes) ? legacyBillingData.quotes : [],
+              invoices: Array.isArray(legacyBillingData.invoices) ? legacyBillingData.invoices : [],
+              payments: Array.isArray(legacyBillingData.payments) ? legacyBillingData.payments : [],
+              creditNotes: Array.isArray(legacyBillingData.creditNotes) ? legacyBillingData.creditNotes : [],
+            },
+          }
+          const migrationResponse = await fetch('/api/workspace', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ version, data: saved }),
+          })
+          const migrationResult = await migrationResponse.json()
+          if (!migrationResponse.ok) throw new Error(migrationResult.error?.message ?? 'No se pudieron migrar los datos guardados en este navegador.')
+          version = migrationResult.version
+          try {
+            window.localStorage.removeItem('erp-heydi-datos')
+            window.localStorage.removeItem('erp-heydi-facturacion')
+          } catch {
+            setNotice('Los datos se sincronizaron con el servidor, pero no se pudo borrar la copia local antigua.')
+          }
+        }
+      }
+      workspaceVersion.current = version
+      if (saved.records && typeof saved.records === 'object' && !Array.isArray(saved.records)) {
+        const { 'Usuarios y roles': _users, ...savedRecords } = saved.records as Record<string, RecordItem[]>
+        setRecords(savedRecords)
+      }
+      if (Array.isArray(saved.orders)) setOrders(saved.orders as Order[])
+      if (Array.isArray(saved.materials)) setMaterials(saved.materials as Material[])
+      if (Array.isArray(saved.movements)) setMovements(saved.movements as Movement[])
+      if (Array.isArray(saved.purchases)) setPurchases(saved.purchases as Purchase[])
+      if (Array.isArray(saved.sales)) setSales(saved.sales as Sale[])
+      if (saved.productStock && typeof saved.productStock === 'object' && !Array.isArray(saved.productStock)) setProductStock(saved.productStock as Record<string, number>)
+      if (saved.qc && typeof saved.qc === 'object' && !Array.isArray(saved.qc)) setQc(saved.qc as Record<string, QcBuckets>)
+      if (saved.qcRequired && typeof saved.qcRequired === 'object' && !Array.isArray(saved.qcRequired)) setQcRequired(saved.qcRequired as Record<string, boolean>)
+      if (Array.isArray(saved.qcLog)) setQcLog(saved.qcLog as QcRecord[])
+      if (saved.billing && typeof saved.billing === 'object' && !Array.isArray(saved.billing)) {
+        const billingData = saved.billing as Partial<BillingData>
+        setBilling({
+          quotes: Array.isArray(billingData.quotes) ? billingData.quotes : [],
+          invoices: Array.isArray(billingData.invoices) ? billingData.invoices : [],
+          payments: Array.isArray(billingData.payments) ? billingData.payments : [],
+          creditNotes: Array.isArray(billingData.creditNotes) ? billingData.creditNotes : [],
+        })
+      }
+      setLoaded(true)
+    })().catch((error: unknown) => {
+      if (!cancelled) setWorkspaceError(error instanceof Error ? error.message : 'No se pudieron cargar los datos del ERP.')
+    })
+    return () => { cancelled = true }
   }, [])
-  useEffect(() => { if (!loaded) return; const { 'Usuarios y roles': _users, ...savedRecords } = records; try { window.localStorage.setItem('erp-heydi-datos', JSON.stringify({ records: savedRecords, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog })) } catch { } }, [loaded, records, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog])
-  const resetAll = () => { if (!window.confirm('Se borrarán todos los datos registrados y volverán los datos iniciales. ¿Continuar?')) return; setRecords(initial); setOrders(initialOrders); setMaterials(initialMaterials); setMovements([]); setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([]); notify('Datos restablecidos') }
+  useEffect(() => {
+    if (!loaded || workspaceError) return
+    const { 'Usuarios y roles': _users, ...savedRecords } = records
+    const data = { records: savedRecords, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog, billing }
+    saveQueue.current = saveQueue.current.then(async () => {
+      const response = await fetch('/api/workspace', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: workspaceVersion.current, data }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error?.message ?? 'No se pudieron guardar los datos del ERP.')
+      workspaceVersion.current = result.version
+    }).catch((error: unknown) => {
+      setWorkspaceError(error instanceof Error ? error.message : 'No se pudieron guardar los datos del ERP.')
+    })
+  }, [loaded, workspaceError, records, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog, billing])
+  const resetAll = () => { if (!window.confirm('Se borrarán todos los datos registrados y volverán los datos iniciales. ¿Continuar?')) return; setRecords(initial); setOrders(initialOrders); setMaterials(initialMaterials); setMovements([]); setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([]); setBilling({ quotes: [], invoices: [], payments: [], creditNotes: [] }); notify('Datos restablecidos') }
   const selectPage = (label: string) => {
     setActive(label)
     setSearch('')
@@ -126,7 +224,7 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
     setMovements(demo.map(([code, name, unit, qty, cost, ref], i) => ({ id: Date.now() + i, date: stamp, type: 'Entrada' as const, code, material: name, qty, unit, total: qty * cost, ref })).reverse())
     setRecords({ ...initial, 'BOM / Recetas': initial['BOM / Recetas'].map((r) => ({ ...r, data: { ...r.data!, ingredients: 'MP-101=12\nMP-102=3\nMP-103=3\nMP-104=24\nMP-105=0.5' } })) })
     setOrders(initialOrders)
-    setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([])
+    setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([]); setBilling({ quotes: [], invoices: [], payments: [], creditNotes: [] })
     notify('Datos de ejemplo cargados: ahora finaliza las dos órdenes')
   }
   const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 4000) }
@@ -405,6 +503,44 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
     return true
   }
 
+  const applyBillingInventory = (lines: { product: string; qty: number; price: number }[], reference: string, direction: 'sale' | 'return') => {
+    if (!lines.length || lines.some((line) => !line.product || !(line.qty > 0) || !Number.isFinite(line.price) || line.price < 0)) {
+      notify('Las líneas del documento de facturación no son válidas')
+      return false
+    }
+    const quantities: Record<string, number> = {}
+    lines.forEach((line) => { quantities[line.product] = (quantities[line.product] ?? 0) + line.qty })
+    if (direction === 'sale') {
+      const lacking = Object.keys(quantities).find((name) => (productStock[name] ?? 0) < quantities[name])
+      if (lacking) {
+        notify(`Stock insuficiente de ${lacking}: hay ${num(productStock[lacking] ?? 0, 0)} und y la factura requiere ${num(quantities[lacking], 0)}.`)
+        return false
+      }
+    }
+    const stamp = now()
+    const movementType = direction === 'sale' ? 'Venta' : 'Devolución'
+    const movementsToAdd: Movement[] = lines.map((line, index) => ({
+      id: Date.now() + index,
+      date: stamp,
+      type: movementType,
+      code: productInfo(records, line.product).code,
+      material: line.product,
+      qty: line.qty,
+      unit: 'und',
+      total: line.qty * line.price,
+      ref: reference,
+    }))
+    setProductStock((current) => {
+      const next = { ...current }
+      Object.entries(quantities).forEach(([name, qty]) => {
+        next[name] = (next[name] ?? 0) + (direction === 'sale' ? -qty : qty)
+      })
+      return next
+    })
+    setMovements((current) => [...movementsToAdd.reverse(), ...current])
+    return true
+  }
+
   // Finalizar orden: descuenta insumos segun la receta, suma el producto terminado al inventario y registra los movimientos
   const finalizeOrder = (order: Order, produced: number, minutes: number) => {
     const { product, lines, needs } = getNeeds(order, records, materials)
@@ -464,6 +600,11 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
       case 'Órdenes de compra': return <PurchasesPage purchases={purchases} suppliers={(records.Proveedores ?? []).map((s) => s.name)} materials={materials} draft={purchaseDraft} clearDraft={() => setPurchaseDraft(null)} onCreate={createPurchase} onCancel={cancelPurchase} onGoReceive={() => nav('Recepción de material')} />
       case 'Recepción de material': return <ReceptionPage purchases={purchases} materials={materials} movements={movements} onReceive={receivePurchase} />
       case 'Salidas': return <SalesPage sales={sales} customers={(records.Clientes ?? []).map((c) => c.name)} products={productNames.map((name) => ({ name, price: productInfo(records, name).price }))} stock={productStock} onCreate={createSale} />
+      case 'Cotizaciones':
+      case 'Facturación':
+      case 'Registro de pagos':
+      case 'Devoluciones y notas de crédito':
+        return <BillingModule section={active} customers={(records.Clientes ?? []).map((customer) => customer.name)} products={productNames.map((name) => ({ name, code: productInfo(records, name).code, price: productInfo(records, name).price }))} stock={productStock} data={billing} onDataChange={setBilling} onInventoryChange={applyBillingInventory} onNotice={notify} />
       case 'Calidad y liberación': return <QualityPage products={Array.from(new Set([...productNames, ...Object.keys(productStock), ...Object.keys(qc)]))} qc={qc} stock={productStock} required={qcRequired} log={qcLog} onToggle={(name) => setQcRequired((current) => ({ ...current, [name]: !current[name] }))} onAction={qcAction} />
       case 'Materias primas': return <><Head eyebrow="Módulo operativo" title="Materias primas" subtitle="Catálogo de insumos. El stock y el costo se actualizan con las Entradas."><button className="primary-button" onClick={() => openModal('Materias primas')}><Plus />Nuevo registro</button></Head><section className="panel module-panel">{materials.length ? <div className="table-scroll"><table><thead><tr><th>Código</th><th>Nombre</th><th>Unidad</th><th>Stock</th><th>Costo promedio</th><th>Acciones</th></tr></thead><tbody>{materials.map((m) => <tr key={m.id}><td>{m.code}</td><td>{m.name}</td><td>{m.unit}</td><td>{num(m.stock)}</td><td>{money(m.cost)}</td><td className="row-actions"><button className="icon-button" aria-label={`Editar ${m.name}`} onClick={() => editMaterial(m)}><Edit3 /></button><button className="icon-button danger" aria-label={`Eliminar ${m.name}`} onClick={() => removeMaterial(m.id)}><Trash2 /></button></td></tr>)}</tbody></table></div> : <div className="empty-state"><AlertTriangle />No hay registros para mostrar.</div>}</section></>
       case 'Existencias': return <><Head eyebrow="Inventario" title="Existencias" subtitle="Stock actual y valor del inventario de materias primas y de producto terminado." /><Table head={['Código', 'Materia prima', 'Stock', 'Costo promedio', 'Valor']} rows={[...materials.map((m) => [m.code, m.name, `${num(m.stock)} ${m.unit}`, money(m.cost), money(m.stock * m.cost)]), ...(materials.length ? [['', 'TOTAL', '', '', money(sum(materials.map((m) => m.stock * m.cost)))]] : [])]} /><section className="panel module-panel"><div className="panel-heading"><div><h2>Producto terminado</h2><p>Unidades disponibles para venta o despacho.</p></div></div></section><Table head={['Producto', 'Disponible (liberado)', 'Pendiente de liberación', 'En retrabajo']} rows={finishedRows} empty="Aún no hay producto terminado: finaliza una orden de producción." /></>
@@ -502,7 +643,14 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
     </aside>
     <main className="main-content">
       <header className="topbar"><button className="icon-button menu-trigger" aria-label="Abrir menú"><Menu /></button><div className="breadcrumbs"><span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Buscar"><Search /></button><button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button><div className="top-avatar" title={`${currentUser.fullName} · ${currentUser.role}`}>{userInitials(currentUser.fullName)}</div><span className="top-user-name">{currentUser.fullName}</span>{logoutButton}</div></header>
-      <div className="content-wrap">{notice && <div className="toast-message"><CheckCircle2 />{notice}</div>}{page()}</div>
+      <div className="content-wrap">
+        {notice && <div className="toast-message"><CheckCircle2 />{notice}</div>}
+        {!loaded
+          ? <section className="panel module-panel"><p className="eyebrow">Conectando</p><h1>Cargando datos del ERP...</h1></section>
+          : workspaceError
+            ? <section className="panel module-panel" role="alert"><p className="eyebrow">Error de conexión</p><h1>No se pudieron sincronizar los datos</h1><p className="subtitle">{workspaceError}</p><button className="primary-button" style={{ marginTop: 16 }} onClick={() => window.location.reload()}>Recargar datos del servidor</button></section>
+            : page()}
+      </div>
       <footer className="footer"><span>© 2024 Repostería Heydi</span><span>v1.0.0 · Managua, Nicaragua</span></footer>
     </main>
     {modal && <Modal module={modal.module} materials={materials} productNames={productNames} fields={moduleFields} form={form} setForm={setForm} onClose={() => setModal(null)} onSave={save} />}
@@ -774,7 +922,7 @@ function SalesPage({ sales, customers, products, stock, onCreate }: { sales: Sal
 function MovementsPage({ movements }: { movements: Movement[] }) {
   const [type, setType] = useState('Todos')
   const rows = movements.filter((m) => type === 'Todos' || m.type === type)
-  return <><Head eyebrow="Inventario" title="Movimientos" subtitle="Kardex único: compras recibidas, consumo de insumos, producción, ventas y despachos."><select style={{ ...inputBox, width: 200 }} aria-label="Filtrar por tipo" value={type} onChange={(event) => setType(event.target.value)}>{['Todos', 'Entrada', 'Consumo', 'Producción', 'Liberación', 'Retrabajo', 'Retorno retrabajo', 'Scrap', 'Venta', 'Despacho'].map((t) => <option key={t} value={t}>{t}</option>)}</select></Head><Table head={['Fecha', 'Tipo', 'Código', 'Ítem', 'Cantidad', 'Valor', 'Referencia']} rows={rows.map((m) => [m.date, m.type, m.code, m.material, `${num(m.qty)} ${m.unit}`, money(m.total), m.ref])} empty="No hay movimientos todavía." /></>
+  return <><Head eyebrow="Inventario" title="Movimientos" subtitle="Kardex único: compras recibidas, consumo, producción, ventas, despachos y devoluciones."><select style={{ ...inputBox, width: 200 }} aria-label="Filtrar por tipo" value={type} onChange={(event) => setType(event.target.value)}>{['Todos', 'Entrada', 'Consumo', 'Producción', 'Liberación', 'Retrabajo', 'Retorno retrabajo', 'Scrap', 'Venta', 'Despacho', 'Devolución'].map((t) => <option key={t} value={t}>{t}</option>)}</select></Head><Table head={['Fecha', 'Tipo', 'Código', 'Ítem', 'Cantidad', 'Valor', 'Referencia']} rows={rows.map((m) => [m.date, m.type, m.code, m.material, `${num(m.qty)} ${m.unit}`, money(m.total), m.ref])} empty="No hay movimientos todavía." /></>
 }
 
 function QualityPage({ products, qc, stock, required, log, onToggle, onAction }: { products: string[]; qc: Record<string, QcBuckets>; stock: Record<string, number>; required: Record<string, boolean>; log: QcRecord[]; onToggle: (name: string) => void; onAction: (action: QcAction, product: string, qty: number, reason: string, source: 'pending' | 'rework' | 'available') => boolean }) {

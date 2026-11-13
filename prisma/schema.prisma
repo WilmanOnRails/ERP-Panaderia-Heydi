@@ -115,6 +115,15 @@ model ErpProductionOrder {
   @@map("erp_production_orders")
 }
 
+model ErpWorkspace {
+  id        Int      @id @default(1)
+  version   Int      @default(0)
+  data      Json     @default("{}")
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("erp_workspace")
+}
+
 model ErpUser {
   id           Int      @id @default(autoincrement())
   fullName     String   @map("full_name") @db.Text

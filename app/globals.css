@@ -38,6 +38,13 @@ body { background: var(--cream); color: var(--ink); font-family: Arial, Helvetic
 .logout-error { position: absolute; right: 0; bottom: calc(100% + 8px); width: 220px; padding: 9px; border-radius: 8px; background: #7f1d1d; color: #fff; }
 .login-demo-note { margin-top: 22px; font-size: .78rem; }
 @media (max-width: 760px) { .login-page { padding: 14px; } .login-card { grid-template-columns: 1fr; } .login-visual { min-height: 260px; } .login-form-panel { padding: 34px 26px 40px; } }
+.billing-totals { max-width: 360px; margin: 20px 0 0 auto; display: grid; gap: 8px; color: #8d7668; font-size: 13px; }
+.billing-totals span { display: flex; justify-content: space-between; gap: 20px; }
+.billing-totals strong { color: var(--chocolate); }
+.billing-totals .billing-grand-total { padding-top: 9px; border-top: 1px solid var(--line); font-size: 15px; font-weight: 700; }
+.billing-error { margin: 0 0 16px; padding: 12px 14px; border: 1px solid #e7b5a8; border-radius: 8px; color: #7f1d1d; background: #fff1ed; font-size: 13px; }
+.billing-module .page-heading { margin-top: 0; }
+@media (max-width: 760px) { .billing-totals { margin-left: 0; } }
 button { font: inherit; }
 .erp-shell { min-height: 100vh; display: flex; background: var(--cream); }
 .sidebar { width: 255px; flex: 0 0 255px; min-height: 100vh; padding: 28px 16px 18px; color: #fff; background: var(--chocolate); display: flex; flex-direction: column; }
