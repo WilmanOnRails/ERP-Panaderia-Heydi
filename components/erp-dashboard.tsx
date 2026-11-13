@@ -77,7 +77,7 @@ const fields: Record<string, Field[]> = {
   Proveedores: [{ key: 'name', label: 'Nombre del proveedor', required: true }, { key: 'lastName', label: 'Apellidos', required: true }, { key: 'identity', label: 'Cédula de identidad', required: true }, { key: 'phone', label: 'Número de teléfono', required: true }, { key: 'email', label: 'Correo electrónico', type: 'email', required: true }],
   Clientes: [{ key: 'name', label: 'Nombre del cliente', required: true }, { key: 'phone', label: 'Teléfono', required: true }, { key: 'address', label: 'Dirección', required: true }, { key: 'email', label: 'Correo electrónico', type: 'email', required: true }, { key: 'code', label: 'Código', required: true }],
   'Órdenes de producción': [{ key: 'order', label: 'Orden', required: true }, { key: 'product', label: 'Producto', type: 'product', required: true }, { key: 'planned', label: 'Planificado', type: 'number', required: true }, { key: 'produced', label: 'Producido', type: 'number', required: true }, { key: 'status', label: 'Estado', required: true }],
-  'Usuarios y roles': [{ key: 'name', label: 'Nombre completo', required: true }, { key: 'username', label: 'Nombre de usuario', required: true }, { key: 'code', label: 'Código', required: true }, { key: 'phone', label: 'Teléfono', required: true }, { key: 'email', label: 'Correo electrónico', type: 'email', required: true }, { key: 'role', label: 'Rol: administrador o usuario', required: true }],
+  'Usuarios y roles': [{ key: 'name', label: 'Nombre completo', required: true }, { key: 'username', label: 'Nombre de usuario', required: true }, { key: 'code', label: 'Código', required: true }, { key: 'phone', label: 'Teléfono' }, { key: 'email', label: 'Correo electrónico', type: 'email', required: true }, { key: 'role', label: 'Rol', required: true }, { key: 'password', label: 'Contraseña (mínimo 12 caracteres; en edición dejar en blanco para conservarla)', type: 'password' }],
 }
 
 const initial: Record<string, RecordItem[]> = {
@@ -97,17 +97,17 @@ function Badge({ status }: { status: string }) { return <span className={`status
 function Head({ eyebrow, title, subtitle, children }: { eyebrow: string; title: string; subtitle: string; children?: ReactNode }) { return <section className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="subtitle">{subtitle}</p></div>{children}</section> }
 function Table({ head, rows, empty = 'No hay registros para mostrar.' }: { head: string[]; rows: (string | number)[][]; empty?: string }) { return <section className="panel module-panel">{rows.length ? <div className="table-scroll"><table><thead><tr>{head.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>)}</tbody></table></div> : <div className="empty-state"><AlertTriangle />{empty}</div>}</section> }
 
-export function ErpDashboard() {
+export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
   const [active, setActive] = useState('Dashboard'); const [records, setRecords] = useState(initial); const [orders, setOrders] = useState(initialOrders); const [materials, setMaterials] = useState(initialMaterials); const [movements, setMovements] = useState<Movement[]>([]); const [search, setSearch] = useState(''); const [notice, setNotice] = useState(''); const [modal, setModal] = useState<{ module: string; item?: RecordItem } | null>(null); const [detail, setDetail] = useState<RecordItem | null>(null); const [finalizing, setFinalizing] = useState<Order | null>(null); const [form, setForm] = useState<Record<string, string>>({}); const [loaded, setLoaded] = useState(false)
   const [expandedGroup, setExpandedGroup] = useState('Panel principal')
   const [purchases, setPurchases] = useState<Purchase[]>([]); const [sales, setSales] = useState<Sale[]>([]); const [productStock, setProductStock] = useState<Record<string, number>>({}); const [purchaseDraft, setPurchaseDraft] = useState<{ code: string; qty: number }[] | null>(null)
   const [qc, setQc] = useState<Record<string, QcBuckets>>({}); const [qcRequired, setQcRequired] = useState<Record<string, boolean>>({}); const [qcLog, setQcLog] = useState<QcRecord[]>([])
   // Persistencia: los datos se guardan en el navegador (localStorage) y sobreviven a recargas de la página
   useEffect(() => {
-    try { const raw = window.localStorage.getItem('erp-heydi-datos'); if (raw) { const saved = JSON.parse(raw); if (saved.records) setRecords(saved.records); if (saved.orders) setOrders(saved.orders); if (saved.materials) setMaterials(saved.materials); if (saved.movements) setMovements(saved.movements); if (saved.purchases) setPurchases(saved.purchases); if (saved.sales) setSales(saved.sales); if (saved.productStock) setProductStock(saved.productStock); if (saved.qc) setQc(saved.qc); if (saved.qcRequired) setQcRequired(saved.qcRequired); if (saved.qcLog) setQcLog(saved.qcLog) } } catch { }
+    try { const raw = window.localStorage.getItem('erp-heydi-datos'); if (raw) { const saved = JSON.parse(raw); if (saved.records) { const { 'Usuarios y roles': _users, ...savedRecords } = saved.records; setRecords(savedRecords) } if (saved.orders) setOrders(saved.orders); if (saved.materials) setMaterials(saved.materials); if (saved.movements) setMovements(saved.movements); if (saved.purchases) setPurchases(saved.purchases); if (saved.sales) setSales(saved.sales); if (saved.productStock) setProductStock(saved.productStock); if (saved.qc) setQc(saved.qc); if (saved.qcRequired) setQcRequired(saved.qcRequired); if (saved.qcLog) setQcLog(saved.qcLog) } } catch { }
     setLoaded(true)
   }, [])
-  useEffect(() => { if (!loaded) return; try { window.localStorage.setItem('erp-heydi-datos', JSON.stringify({ records, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog })) } catch { } }, [loaded, records, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog])
+  useEffect(() => { if (!loaded) return; const { 'Usuarios y roles': _users, ...savedRecords } = records; try { window.localStorage.setItem('erp-heydi-datos', JSON.stringify({ records: savedRecords, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog })) } catch { } }, [loaded, records, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog])
   const resetAll = () => { if (!window.confirm('Se borrarán todos los datos registrados y volverán los datos iniciales. ¿Continuar?')) return; setRecords(initial); setOrders(initialOrders); setMaterials(initialMaterials); setMovements([]); setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([]); notify('Datos restablecidos') }
   const selectPage = (label: string) => {
     setActive(label)
@@ -128,6 +128,30 @@ export function ErpDashboard() {
     notify('Datos de ejemplo cargados: ahora finaliza las dos órdenes')
   }
   const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 4000) }
+  useEffect(() => {
+    if (!loaded || !isAdmin || active !== 'Usuarios y roles') return
+    let cancelled = false
+    fetch('/api/users?limit=100', { cache: 'no-store' })
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error?.message ?? 'No se pudieron cargar los usuarios.')
+        return result.data as { id: number; fullName: string; username: string; code: string; phone: string; email: string; role: string }[]
+      })
+      .then((users) => {
+        if (cancelled) return
+        const userRecords: RecordItem[] = users.map((user) => ({
+          id: String(user.id),
+          name: user.fullName,
+          code: user.code,
+          detail: `${user.username} · ${user.email} · ${user.phone || 'Sin teléfono'} · ${user.role}`,
+          status: 'Activo',
+          data: { name: user.fullName, username: user.username, code: user.code, phone: user.phone, email: user.email, role: user.role },
+        }))
+        setRecords((current) => ({ ...current, 'Usuarios y roles': userRecords }))
+      })
+      .catch((error: unknown) => { if (!cancelled) notify(error instanceof Error ? error.message : 'No se pudieron cargar los usuarios.') })
+    return () => { cancelled = true }
+  }, [active, isAdmin, loaded])
   const moduleFields = fields[active] ?? []
   const productNames = (records.Productos ?? []).map((p) => p.name)
   const finishedRows = Array.from(new Set([...productNames, ...Object.keys(productStock), ...Object.keys(qc)])).map((name) => [name, `${num(productStock[name] ?? 0, 0)} und`, `${num(qc[name]?.pending ?? 0, 0)} und`, `${num(qc[name]?.rework ?? 0, 0)} und`])
@@ -143,8 +167,57 @@ export function ErpDashboard() {
     setModal({ module, item })
   }
   const editMaterial = (m: Material) => openModal('Materias primas', { id: m.id, name: m.name, code: m.code, detail: '', status: 'Activo', data: { name: m.name, code: m.code, unit: m.unit } })
-  const save = () => {
+  const save = async () => {
     if (!modal) return
+    if (modal.module === 'Usuarios y roles') {
+      const creating = !modal.item
+      if (!form.name?.trim() || !form.username?.trim() || !form.code?.trim() || !form.email?.trim() || !form.role?.trim()) {
+        notify('Completa los campos obligatorios del usuario')
+        return
+      }
+      if (creating && (form.password?.length ?? 0) < 12) {
+        notify('La contraseña debe tener al menos 12 caracteres')
+        return
+      }
+      const payload = {
+        fullName: form.name.trim(),
+        username: form.username.trim(),
+        code: form.code.trim(),
+        phone: form.phone?.trim() ?? '',
+        email: form.email.trim(),
+        role: form.role,
+        ...(form.password ? { password: form.password } : {}),
+      }
+      try {
+        const response = await fetch(creating ? '/api/users' : `/api/users/${modal.item!.id}`, {
+          method: creating ? 'POST' : 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error?.message ?? 'No se pudo guardar el usuario.')
+        const user = result.data
+        const item: RecordItem = {
+          id: String(user.id),
+          name: user.fullName,
+          code: user.code,
+          detail: `${user.username} · ${user.email} · ${user.phone || 'Sin teléfono'} · ${user.role}`,
+          status: 'Activo',
+          data: { name: user.fullName, username: user.username, code: user.code, phone: user.phone, email: user.email, role: user.role },
+        }
+        setRecords((current) => ({
+          ...current,
+          'Usuarios y roles': creating
+            ? [item, ...(current['Usuarios y roles'] ?? [])]
+            : (current['Usuarios y roles'] ?? []).map((row) => row.id === item.id ? item : row),
+        }))
+        setModal(null)
+        notify(creating ? 'Usuario creado; ya puede iniciar sesión con su usuario o correo' : 'Usuario actualizado')
+      } catch (error) {
+        notify(error instanceof Error ? error.message : 'No se pudo guardar el usuario.')
+      }
+      return
+    }
     if (modal.module === 'Órdenes de producción') {
       if (!form.order?.trim() || !form.product?.trim() || !form.planned) return
       const order: Order = { id: form.order.trim(), product: form.product.trim(), qty: Number(form.planned), produced: Number(form.produced || 0), date: 'Ahora', status: (form.status as OrderStatus) || 'Pendiente' }
@@ -172,6 +245,20 @@ export function ErpDashboard() {
     notify(`${modal.item ? 'Registro actualizado' : 'Registro creado'} en ${modal.module}`)
   }
   const remove = (module: string, id: string) => { setRecords((current) => ({ ...current, [module]: current[module].filter((row) => row.id !== id) })); notify('Registro eliminado del catálogo') }
+  const removeUser = async (id: string) => {
+    if (!window.confirm('¿Eliminar este usuario? Ya no podrá iniciar sesión.')) return
+    try {
+      const response = await fetch(`/api/users/${id}`, { method: 'DELETE' })
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.error?.message ?? 'No se pudo eliminar el usuario.')
+      }
+      setRecords((current) => ({ ...current, 'Usuarios y roles': (current['Usuarios y roles'] ?? []).filter((row) => row.id !== id) }))
+      notify('Usuario eliminado')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'No se pudo eliminar el usuario.')
+    }
+  }
   const removeMaterial = (id: string) => { setMaterials((current) => current.filter((m) => m.id !== id)); notify('Materia prima eliminada') }
   const updateOrder = (id: string, status: OrderStatus) => {
     const target = orders.find((o) => o.id === id)
@@ -336,7 +423,7 @@ export function ErpDashboard() {
       case 'Seguimiento de operaciones': return <><Head eyebrow="Producción" title="Seguimiento de operaciones" subtitle="Inicio, fin y tiempo real de cada orden." /><Table head={['Orden', 'Producto', 'Estado', 'Inicio', 'Fin', 'Tiempo real (min)']} rows={orders.map((o) => [o.id, o.product, o.status, o.startedAt ?? '—', o.finishedAt ?? '—', o.minutes ?? '—'])} /></>
       case 'Productos terminados': return <><Head eyebrow="Producción" title="Productos terminados" subtitle="Stock disponible y unidades producidas por orden finalizada." /><Table head={['Producto', 'Disponible (liberado)', 'Pendiente de liberación', 'En retrabajo']} rows={finishedRows} empty="Aún no hay producto terminado." /><Table head={['Orden', 'Producto', 'Planificado', 'Producido', 'Yield', 'Fecha de fin']} rows={orders.filter((o) => o.status === 'Finalizada').map((o) => [o.id, o.product, `${o.qty} und`, `${o.produced} und`, o.qty ? pct(o.produced / o.qty) : '—', o.finishedAt ?? '—'])} empty="Aún no hay órdenes finalizadas." /></>
       case 'Reportes de gestión': return <ReportsPage orders={orders} materials={materials} qcLog={qcLog} />
-      default: return <ModulePage title={active} items={visible} search={search} setSearch={setSearch} onNew={() => fields[active] ? openModal(active) : notify('Módulo informativo listo para operar')} onEdit={(item) => openModal(active, item)} onDelete={(id) => remove(active, id)} onSelect={setDetail} />
+      default: return <ModulePage title={active} items={visible} search={search} setSearch={setSearch} onNew={() => fields[active] ? openModal(active) : notify('Módulo informativo listo para operar')} onEdit={(item) => openModal(active, item)} onDelete={(id) => active === 'Usuarios y roles' ? removeUser(id) : remove(active, id)} onSelect={setDetail} />
     }
   }
   return <div className="erp-shell">
@@ -415,7 +502,7 @@ function IngredientsEditor({ label, units, value, materials, onChange }: { label
   return <div style={{ display: 'grid', gap: 8 }}><strong style={{ fontSize: 13 }}>{label}{units ? ` · lote de ${units} unidades` : ''}</strong>{rows.map((row, index) => { const material = materials.find((m) => m.code === row.code); return <div key={index} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto auto', gap: 8, alignItems: 'center' }}><select style={box} value={row.code} onChange={(event) => update(rows.map((r, i) => i === index ? { ...r, code: event.target.value } : r))}><option value="">Selecciona el insumo...</option>{materials.map((m) => <option key={m.code} value={m.code}>{m.name}</option>)}{row.code && !material && <option value={row.code}>{row.code}</option>}</select><input style={box} type="number" min="0" step="any" placeholder="Cantidad" value={row.qty} onChange={(event) => update(rows.map((r, i) => i === index ? { ...r, qty: event.target.value } : r))} /><span style={{ fontSize: 13, minWidth: 48 }}>{material?.unit ?? ''}</span><button type="button" className="icon-button danger" aria-label="Quitar ingrediente" onClick={() => update(rows.length > 1 ? rows.filter((_, i) => i !== index) : [{ code: '', qty: '' }])}><Trash2 /></button></div> })}<div><button type="button" className="outline-button" onClick={() => update([...rows, { code: '', qty: '' }])}><Plus />Agregar ingrediente</button></div></div>
 }
 
-function Modal({ module, materials, productNames, fields: moduleFields, form, setForm, onClose, onSave }: { module: string; materials: Material[]; productNames: string[]; fields: Field[]; form: Record<string, string>; setForm: (form: Record<string, string>) => void; onClose: () => void; onSave: () => void }) { return <div className="modal-backdrop"><section className="modal-card" role="dialog" aria-modal="true"><div className="modal-heading"><div><p className="eyebrow">Formulario de {module}</p><h2>{form.name ? `Editar ${module}` : `Nuevo registro de ${module}`}</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X /></button></div><div className="form-grid">{moduleFields.map((field) => field.type === 'ingredients' ? <div key={field.key} style={{ gridColumn: '1 / -1' }}><IngredientsEditor label={field.label} units={form.bomUnits} value={form[field.key] ?? ''} materials={materials} onChange={(value) => setForm({ ...form, [field.key]: value })} /></div> : <label key={field.key}>{field.label}{field.type === 'product' ? <select required={field.required} value={form[field.key] ?? ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })}><option value="">Selecciona...</option>{productNames.map((name) => <option key={name} value={name}>{name}</option>)}{form[field.key] && !productNames.includes(form[field.key]) && <option value={form[field.key]}>{form[field.key]}</option>}</select> : field.type === 'textarea' ? <textarea required={field.required} value={form[field.key] ?? ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })} /> : <input required={field.required} type={field.type ?? 'text'} value={form[field.key] ?? ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })} />}</label>)}</div><div className="modal-actions"><button className="outline-button" onClick={onClose}>Cancelar</button><button className="primary-button" onClick={onSave}><CheckCircle2 />Guardar registro</button></div></section></div> }
+function Modal({ module, materials, productNames, fields: moduleFields, form, setForm, onClose, onSave }: { module: string; materials: Material[]; productNames: string[]; fields: Field[]; form: Record<string, string>; setForm: (form: Record<string, string>) => void; onClose: () => void; onSave: () => void }) { return <div className="modal-backdrop"><section className="modal-card" role="dialog" aria-modal="true"><div className="modal-heading"><div><p className="eyebrow">Formulario de {module}</p><h2>{form.name ? `Editar ${module}` : `Nuevo registro de ${module}`}</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X /></button></div><div className="form-grid">{moduleFields.map((field) => field.type === 'ingredients' ? <div key={field.key} style={{ gridColumn: '1 / -1' }}><IngredientsEditor label={field.label} units={form.bomUnits} value={form[field.key] ?? ''} materials={materials} onChange={(value) => setForm({ ...form, [field.key]: value })} /></div> : <label key={field.key}>{field.label}{module === 'Usuarios y roles' && field.key === 'role' ? <select required value={form.role ?? ''} onChange={(event) => setForm({ ...form, role: event.target.value })}><option value="">Selecciona...</option><option value="usuario">usuario</option><option value="administrador">administrador</option></select> : field.type === 'product' ? <select required={field.required} value={form[field.key] ?? ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })}><option value="">Selecciona...</option>{productNames.map((name) => <option key={name} value={name}>{name}</option>)}{form[field.key] && !productNames.includes(form[field.key]) && <option value={form[field.key]}>{form[field.key]}</option>}</select> : field.type === 'textarea' ? <textarea required={field.required} value={form[field.key] ?? ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })} /> : <input required={field.required && !(module === 'Usuarios y roles' && field.key === 'password' && Boolean(form.username))} type={field.type ?? 'text'} minLength={field.type === 'password' ? 12 : undefined} value={form[field.key] ?? ''} onChange={(event) => setForm({ ...form, [field.key]: event.target.value })} />}</label>)}</div><div className="modal-actions"><button className="outline-button" onClick={onClose}>Cancelar</button><button className="primary-button" onClick={onSave}><CheckCircle2 />Guardar registro</button></div></section></div> }
 function DetailModal({ item, onClose }: { item: RecordItem; onClose: () => void }) { return <div className="modal-backdrop"><section className="modal-card" role="dialog" aria-modal="true"><div className="modal-heading"><div><p className="eyebrow">Detalle del registro</p><h2>{item.name}</h2></div><button className="icon-button" onClick={onClose} aria-label="Cerrar"><X /></button></div><div className="detail-grid"><strong>Código</strong><span>{item.code ?? item.id}</span><strong>Estado</strong><Badge status={item.status} /><strong>Información</strong><span>{item.detail}</span>{item.data && Object.entries(item.data).filter(([key]) => !['name', 'code'].includes(key)).map(([key, value]) => <span key={key}><b>{key}:</b> {value}</span>)}</div></section></div> }
 
 // ---------- Flujo: compra -> recepcion -> produccion -> inventario -> despacho/venta ----------
