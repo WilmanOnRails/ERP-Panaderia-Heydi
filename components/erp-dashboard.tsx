@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Archive, Bell, Boxes, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download } from 'lucide-react'
+import { Archive, Bell, Boxes, ChevronDown, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download } from 'lucide-react'
 
 type OrderStatus = 'Pendiente' | 'En proceso' | 'Finalizada' | 'Cancelada'
 type RecordItem = { id: string; name: string; code?: string; detail: string; status: 'Activo' | 'Inactivo'; data?: Record<string, string> }
@@ -99,6 +99,7 @@ function Table({ head, rows, empty = 'No hay registros para mostrar.' }: { head:
 
 export function ErpDashboard() {
   const [active, setActive] = useState('Dashboard'); const [records, setRecords] = useState(initial); const [orders, setOrders] = useState(initialOrders); const [materials, setMaterials] = useState(initialMaterials); const [movements, setMovements] = useState<Movement[]>([]); const [search, setSearch] = useState(''); const [notice, setNotice] = useState(''); const [modal, setModal] = useState<{ module: string; item?: RecordItem } | null>(null); const [detail, setDetail] = useState<RecordItem | null>(null); const [finalizing, setFinalizing] = useState<Order | null>(null); const [form, setForm] = useState<Record<string, string>>({}); const [loaded, setLoaded] = useState(false)
+  const [expandedGroup, setExpandedGroup] = useState('Panel principal')
   const [purchases, setPurchases] = useState<Purchase[]>([]); const [sales, setSales] = useState<Sale[]>([]); const [productStock, setProductStock] = useState<Record<string, number>>({}); const [purchaseDraft, setPurchaseDraft] = useState<{ code: string; qty: number }[] | null>(null)
   const [qc, setQc] = useState<Record<string, QcBuckets>>({}); const [qcRequired, setQcRequired] = useState<Record<string, boolean>>({}); const [qcLog, setQcLog] = useState<QcRecord[]>([])
   // Persistencia: los datos se guardan en el navegador (localStorage) y sobreviven a recargas de la página
@@ -108,6 +109,12 @@ export function ErpDashboard() {
   }, [])
   useEffect(() => { if (!loaded) return; try { window.localStorage.setItem('erp-heydi-datos', JSON.stringify({ records, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog })) } catch { } }, [loaded, records, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog])
   const resetAll = () => { if (!window.confirm('Se borrarán todos los datos registrados y volverán los datos iniciales. ¿Continuar?')) return; setRecords(initial); setOrders(initialOrders); setMaterials(initialMaterials); setMovements([]); setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([]); notify('Datos restablecidos') }
+  const selectPage = (label: string) => {
+    setActive(label)
+    setSearch('')
+    const group = groups.find(({ items }) => items.some(([item]) => item === label))
+    if (group) setExpandedGroup(group.label)
+  }
   // Carga en un clic los datos de ejemplo: 5 insumos con compra registrada y la receta completa (las órdenes quedan listas para finalizar)
   const loadDemo = () => {
     if (!window.confirm('Se reemplazarán los datos actuales por los datos de ejemplo (insumos, compras y receta). ¿Continuar?')) return
@@ -126,7 +133,7 @@ export function ErpDashboard() {
   const finishedRows = Array.from(new Set([...productNames, ...Object.keys(productStock), ...Object.keys(qc)])).map((name) => [name, `${num(productStock[name] ?? 0, 0)} und`, `${num(qc[name]?.pending ?? 0, 0)} und`, `${num(qc[name]?.rework ?? 0, 0)} und`])
   const visible = useMemo(() => (records[active] ?? []).filter((item) => `${item.name} ${item.code ?? ''} ${item.detail}`.toLowerCase().includes(search.toLowerCase())), [records, active, search])
   const openModal = (module: string, item?: RecordItem) => {
-    setActive(module)
+    selectPage(module)
     if (module === 'Órdenes de producción') {
       const order = item as unknown as Order | undefined
       setForm(item?.data ?? { order: order?.id ?? '', product: order?.product ?? '', planned: order?.qty ? String(order.qty) : '', produced: order?.produced ? String(order.produced) : '0', status: order?.status ?? 'Pendiente' })
@@ -311,12 +318,12 @@ export function ErpDashboard() {
     return true
   }
 
-  const nav = (label: string) => { setActive(label); setSearch('') }
+  const nav = selectPage
   const page = () => {
     switch (active) {
-      case 'Dashboard': return <Dashboard orders={orders} records={records} extra={materials.length} openPurchases={purchases.filter((p) => p.status === 'Pendiente' || p.status === 'Recibida parcial').length} salesCount={sales.length} onNew={() => setActive('Órdenes de producción')} onReset={resetAll} onDemo={loadDemo} />
+      case 'Dashboard': return <Dashboard orders={orders} records={records} extra={materials.length} openPurchases={purchases.filter((p) => p.status === 'Pendiente' || p.status === 'Recibida parcial').length} salesCount={sales.length} onNew={() => selectPage('Órdenes de producción')} onReset={resetAll} onDemo={loadDemo} />
       case 'Órdenes de producción': return <OrdersPage orders={orders} onNew={() => openModal('Órdenes de producción')} updateOrder={updateOrder} onFinalize={setFinalizing} />
-      case 'Disponibilidad de materiales': return <AvailabilityPage orders={orders} records={records} materials={materials} onBuy={(draft) => { setPurchaseDraft(draft); setActive('Órdenes de compra') }} />
+      case 'Disponibilidad de materiales': return <AvailabilityPage orders={orders} records={records} materials={materials} onBuy={(draft) => { setPurchaseDraft(draft); selectPage('Órdenes de compra') }} />
       case 'Órdenes de compra': return <PurchasesPage purchases={purchases} suppliers={(records.Proveedores ?? []).map((s) => s.name)} materials={materials} draft={purchaseDraft} clearDraft={() => setPurchaseDraft(null)} onCreate={createPurchase} onCancel={cancelPurchase} onGoReceive={() => nav('Recepción de material')} />
       case 'Recepción de material': return <ReceptionPage purchases={purchases} materials={materials} movements={movements} onReceive={receivePurchase} />
       case 'Salidas': return <SalesPage sales={sales} customers={(records.Clientes ?? []).map((c) => c.name)} products={productNames.map((name) => ({ name, price: productInfo(records, name).price }))} stock={productStock} onCreate={createSale} />
@@ -332,7 +339,35 @@ export function ErpDashboard() {
       default: return <ModulePage title={active} items={visible} search={search} setSearch={setSearch} onNew={() => fields[active] ? openModal(active) : notify('Módulo informativo listo para operar')} onEdit={(item) => openModal(active, item)} onDelete={(id) => remove(active, id)} onSelect={setDetail} />
     }
   }
-  return <div className="erp-shell"><aside className="sidebar"><div className="brand"><div className="brand-mark"><span>H</span></div><div><strong>Repostería Heydi</strong><small>SISTEMA ERP DE PRODUCCIÓN</small></div></div><nav>{groups.map((group) => <div className="nav-group" key={group.label}><p className="nav-label">{group.label}</p>{group.items.map(([label, Icon]) => <button className={`nav-item ${active === label ? 'active' : ''}`} key={label as string} onClick={() => nav(label as string)}><Icon /><span>{label as string}</span></button>)}</div>)}</nav><div className="sidebar-bottom"><div className="user-card"><div className="avatar">MS</div><div><strong>María Solís</strong><small>Administradora</small></div></div></div></aside><main className="main-content"><header className="topbar"><button className="icon-button menu-trigger" aria-label="Abrir menú"><Menu /></button><div className="breadcrumbs"><span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Buscar"><Search /></button><button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button><div className="top-avatar">MS</div></div></header><div className="content-wrap">{notice && <div className="toast-message"><CheckCircle2 />{notice}</div>}{page()}</div><footer className="footer"><span>© 2024 Repostería Heydi</span><span>v1.0.0 · Managua, Nicaragua</span></footer></main>{modal && <Modal module={modal.module} materials={materials} productNames={productNames} fields={moduleFields} form={form} setForm={setForm} onClose={() => setModal(null)} onSave={save} />}{detail && <DetailModal item={detail} onClose={() => setDetail(null)} />}{finalizing && <FinalizeModal order={finalizing} onClose={() => setFinalizing(null)} onConfirm={(produced, minutes) => finalizeOrder(finalizing, produced, minutes)} />}</div>
+  return <div className="erp-shell">
+    <aside className="sidebar">
+      <div className="brand"><div className="brand-mark"><span>H</span></div><div><strong>Repostería Heydi</strong><small>SISTEMA ERP DE PRODUCCIÓN</small></div></div>
+      <nav aria-label="Navegación principal">
+        {groups.map((group, index) => {
+          const isExpanded = expandedGroup === group.label
+          const itemsId = `nav-items-${index}`
+          return <div className="nav-group" key={group.label}>
+            <button type="button" className="nav-label" aria-expanded={isExpanded} aria-controls={itemsId} onClick={() => setExpandedGroup(isExpanded ? '' : group.label)}>
+              <span>{group.label}</span>
+              <ChevronDown className="nav-chevron" aria-hidden="true" />
+            </button>
+            <div className="nav-items" id={itemsId} hidden={!isExpanded}>
+              {group.items.map(([label, Icon]) => <button className={`nav-item ${active === label ? 'active' : ''}`} key={label as string} onClick={() => nav(label as string)}><Icon /><span>{label as string}</span></button>)}
+            </div>
+          </div>
+        })}
+      </nav>
+      <div className="sidebar-bottom"><div className="user-card"><div className="avatar">MS</div><div><strong>María Solís</strong><small>Administradora</small></div></div></div>
+    </aside>
+    <main className="main-content">
+      <header className="topbar"><button className="icon-button menu-trigger" aria-label="Abrir menú"><Menu /></button><div className="breadcrumbs"><span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Buscar"><Search /></button><button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button><div className="top-avatar">MS</div></div></header>
+      <div className="content-wrap">{notice && <div className="toast-message"><CheckCircle2 />{notice}</div>}{page()}</div>
+      <footer className="footer"><span>© 2024 Repostería Heydi</span><span>v1.0.0 · Managua, Nicaragua</span></footer>
+    </main>
+    {modal && <Modal module={modal.module} materials={materials} productNames={productNames} fields={moduleFields} form={form} setForm={setForm} onClose={() => setModal(null)} onSave={save} />}
+    {detail && <DetailModal item={detail} onClose={() => setDetail(null)} />}
+    {finalizing && <FinalizeModal order={finalizing} onClose={() => setFinalizing(null)} onConfirm={(produced, minutes) => finalizeOrder(finalizing, produced, minutes)} />}
+  </div>
 }
 
 function Dashboard({ orders, records, extra, openPurchases, salesCount, onNew, onReset, onDemo }: { orders: Order[]; records: Record<string, RecordItem[]>; extra: number; openPurchases: number; salesCount: number; onNew: () => void; onReset: () => void; onDemo: () => void }) { const total = Object.values(records).reduce((sum, list) => sum + list.length, 0) + extra; return <><section className="page-heading"><div><p className="eyebrow">Panel principal</p><h1>Buenos días, María</h1><p className="subtitle">Resumen operativo de tu panadería para hoy.</p></div><button className="primary-button" onClick={onNew}><Plus />Nueva orden de producción</button></section><section className="metric-grid">{[['Registros maestros', total], ['Órdenes pendientes', orders.filter((o) => o.status === 'Pendiente').length], ['En proceso', orders.filter((o) => o.status === 'En proceso').length], ['Finalizadas', orders.filter((o) => o.status === 'Finalizada').length], ['Compras por recibir', openPurchases], ['Ventas y despachos', salesCount]].map(([label, value]) => <article className="metric-card" key={String(label)}><div className="metric-icon package"><Package /></div><div className="metric-copy"><p>{label}</p><strong>{value}</strong><small>Actualizado ahora</small></div></article>)}</section><section className="panel module-panel"><div className="panel-heading"><div><h2>Accesos rápidos</h2><p>Gestiona tus catálogos y operaciones.</p></div></div><div className="quick-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}><button className="primary-button" onClick={() => onNew()}><Plus />Crear orden</button><button className="outline-button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>Ver actividad</button><button className="outline-button" onClick={onDemo}><Download />Cargar datos de ejemplo</button><button className="outline-button" onClick={onReset}><Trash2 />Restablecer datos</button></div></section></> }
