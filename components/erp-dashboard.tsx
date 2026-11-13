@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { Archive, Bell, Boxes, ChevronDown, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download } from 'lucide-react'
 
 type OrderStatus = 'Pendiente' | 'En proceso' | 'Finalizada' | 'Cancelada'
-type RecordItem = { id: string; name: string; code?: string; detail: string; status: 'Activo' | 'Inactivo'; data?: Record<string, string> }
+type RecordItem = { id: string; name: string; code?: string; detail: string; status: string; data?: Record<string, string> }
 type Order = { id: string; product: string; qty: number; produced: number; date: string; status: OrderStatus; startedAt?: string; finishedAt?: string; minutes?: number; cost?: number }
 type Material = { id: string; name: string; code: string; unit: string; stock: number; cost: number }
 type QcAction = 'Liberación' | 'Retrabajo' | 'Retorno retrabajo' | 'Scrap'
@@ -22,6 +22,7 @@ type Field = { key: string; label: string; type?: string; required?: boolean }
 
 // ---------- Utilidades ----------
 const now = () => new Date().toLocaleString('es-NI')
+const userInitials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toLocaleUpperCase() ?? '').join('')
 const num = (value: number, decimals = 2) => value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 const money = (value: number) => `C$ ${num(value)}`
 const pct = (value: number) => `${num(value * 100, 1)}%`
@@ -63,7 +64,7 @@ const groups = [
   { label: 'Inventario', items: [['Existencias', Boxes], ['Entradas', Plus], ['Salidas', Package], ['Movimientos', ClipboardList]] },
   { label: 'Producción', items: [['Órdenes de producción', Factory], ['Disponibilidad de materiales', Boxes], ['Consumo de materias primas', ShoppingBasket], ['Seguimiento de operaciones', ClipboardList], ['Productos terminados', Package], ['Calidad y liberación', CheckCircle2]] },
   { label: 'Reportes', items: [['Reportes de gestión', ClipboardList]] },
-  { label: 'Administración', items: [['Usuarios y roles', Users], ['Configuración', ClipboardList]] },
+  { label: 'Administración', items: [['Usuarios y roles', Users], ['Mi cuenta', Users], ['Configuración', ClipboardList]] },
 ]
 
 const materialFields: Field[] = [{ key: 'name', label: 'Nombre de materia prima', required: true }, { key: 'code', label: 'Código', required: true }, { key: 'unit', label: 'Unidad de medida (lb, kg, unidad...)', required: true }]
@@ -92,12 +93,13 @@ const initial: Record<string, RecordItem[]> = {
 const initialMaterials: Material[] = [{ id: 'MP-101', name: 'Harina especial', code: 'MP-101', unit: 'lb', stock: 4.5, cost: 0 }]
 const initialOrders: Order[] = [{ id: 'OP-2024-0018', product: 'Gemelos', qty: 80, produced: 40, date: 'Hoy, 08:30', status: 'En proceso' }, { id: 'OP-2024-0015', product: 'Gemelos', qty: 80, produced: 0, date: '28 Oct, 10:20', status: 'Pendiente' }]
 
-function Badge({ status }: { status: string }) { return <span className={`status-badge ${status === 'Activo' || status === 'Finalizada' || status === 'Recibida' ? 'success' : status === 'En proceso' || status === 'Recibida parcial' ? 'progress' : 'warning'}`}><span className="status-dot" />{status}</span> }
+function Badge({ status }: { status: string }) { const label = status === 'approved' ? 'Aprobado' : status === 'pending' ? 'Pendiente de aprobación' : status === 'rejected' ? 'Rechazado' : status; return <span className={`status-badge ${status === 'Activo' || status === 'Finalizada' || status === 'Recibida' || status === 'approved' ? 'success' : status === 'En proceso' || status === 'Recibida parcial' ? 'progress' : 'warning'}`}><span className="status-dot" />{label}</span> }
 
 function Head({ eyebrow, title, subtitle, children }: { eyebrow: string; title: string; subtitle: string; children?: ReactNode }) { return <section className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="subtitle">{subtitle}</p></div>{children}</section> }
 function Table({ head, rows, empty = 'No hay registros para mostrar.' }: { head: string[]; rows: (string | number)[][]; empty?: string }) { return <section className="panel module-panel">{rows.length ? <div className="table-scroll"><table><thead><tr>{head.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>)}</tbody></table></div> : <div className="empty-state"><AlertTriangle />{empty}</div>}</section> }
 
-export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
+export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }: { currentUser: { id: number; fullName: string; username: string; email: string; phone: string; role: string }; isAdmin: boolean; logoutButton: ReactNode }) {
+  const [currentUser, setCurrentUser] = useState(initialUser)
   const [active, setActive] = useState('Dashboard'); const [records, setRecords] = useState(initial); const [orders, setOrders] = useState(initialOrders); const [materials, setMaterials] = useState(initialMaterials); const [movements, setMovements] = useState<Movement[]>([]); const [search, setSearch] = useState(''); const [notice, setNotice] = useState(''); const [modal, setModal] = useState<{ module: string; item?: RecordItem } | null>(null); const [detail, setDetail] = useState<RecordItem | null>(null); const [finalizing, setFinalizing] = useState<Order | null>(null); const [form, setForm] = useState<Record<string, string>>({}); const [loaded, setLoaded] = useState(false)
   const [expandedGroup, setExpandedGroup] = useState('Panel principal')
   const [purchases, setPurchases] = useState<Purchase[]>([]); const [sales, setSales] = useState<Sale[]>([]); const [productStock, setProductStock] = useState<Record<string, number>>({}); const [purchaseDraft, setPurchaseDraft] = useState<{ code: string; qty: number }[] | null>(null)
@@ -131,25 +133,30 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
   useEffect(() => {
     if (!loaded || !isAdmin || active !== 'Usuarios y roles') return
     let cancelled = false
-    fetch('/api/users?limit=100', { cache: 'no-store' })
-      .then(async (response) => {
+    void (async () => {
+      const users: { id: number; fullName: string; username: string; code: string; phone: string; email: string; role: string; status: string }[] = []
+      let page = 1
+      let hasMore = true
+      while (hasMore && !cancelled) {
+        const response = await fetch(`/api/users?page=${page}&limit=100`, { cache: 'no-store' })
         const result = await response.json()
         if (!response.ok) throw new Error(result.error?.message ?? 'No se pudieron cargar los usuarios.')
-        return result.data as { id: number; fullName: string; username: string; code: string; phone: string; email: string; role: string }[]
-      })
-      .then((users) => {
-        if (cancelled) return
+        users.push(...result.data)
+        hasMore = result.pagination.hasMore
+        page += 1
+      }
+      if (!cancelled) {
         const userRecords: RecordItem[] = users.map((user) => ({
           id: String(user.id),
           name: user.fullName,
           code: user.code,
           detail: `${user.username} · ${user.email} · ${user.phone || 'Sin teléfono'} · ${user.role}`,
-          status: 'Activo',
-          data: { name: user.fullName, username: user.username, code: user.code, phone: user.phone, email: user.email, role: user.role },
+          status: user.status,
+          data: { name: user.fullName, username: user.username, code: user.code, phone: user.phone, email: user.email, role: user.role, status: user.status },
         }))
         setRecords((current) => ({ ...current, 'Usuarios y roles': userRecords }))
-      })
-      .catch((error: unknown) => { if (!cancelled) notify(error instanceof Error ? error.message : 'No se pudieron cargar los usuarios.') })
+      }
+    })().catch((error: unknown) => { if (!cancelled) notify(error instanceof Error ? error.message : 'No se pudieron cargar los usuarios.') })
     return () => { cancelled = true }
   }, [active, isAdmin, loaded])
   const moduleFields = fields[active] ?? []
@@ -202,8 +209,8 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
           name: user.fullName,
           code: user.code,
           detail: `${user.username} · ${user.email} · ${user.phone || 'Sin teléfono'} · ${user.role}`,
-          status: 'Activo',
-          data: { name: user.fullName, username: user.username, code: user.code, phone: user.phone, email: user.email, role: user.role },
+          status: user.status,
+          data: { name: user.fullName, username: user.username, code: user.code, phone: user.phone, email: user.email, role: user.role, status: user.status },
         }
         setRecords((current) => ({
           ...current,
@@ -245,6 +252,32 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
     notify(`${modal.item ? 'Registro actualizado' : 'Registro creado'} en ${modal.module}`)
   }
   const remove = (module: string, id: string) => { setRecords((current) => ({ ...current, [module]: current[module].filter((row) => row.id !== id) })); notify('Registro eliminado del catálogo') }
+  const updateRegistrationStatus = async (id: string, status: 'approved' | 'rejected') => {
+    try {
+      const response = await fetch(`/api/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error?.message ?? 'No se pudo actualizar la solicitud.')
+      const user = result.data
+      setRecords((current) => ({
+        ...current,
+        'Usuarios y roles': (current['Usuarios y roles'] ?? []).map((item) => item.id === id
+          ? {
+              ...item,
+              status: user.status,
+              detail: `${user.username} · ${user.email} · ${user.phone || 'Sin teléfono'} · ${user.role}`,
+              data: { ...(item.data ?? {}), status: user.status, role: user.role },
+            }
+          : item),
+      }))
+      notify(status === 'approved' ? 'Cuenta aprobada; ya puede iniciar sesión' : 'Solicitud rechazada')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'No se pudo actualizar la solicitud.')
+    }
+  }
   const removeUser = async (id: string) => {
     if (!window.confirm('¿Eliminar este usuario? Ya no podrá iniciar sesión.')) return
     try {
@@ -257,6 +290,23 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
       notify('Usuario eliminado')
     } catch (error) {
       notify(error instanceof Error ? error.message : 'No se pudo eliminar el usuario.')
+    }
+  }
+  const saveProfile = async (updates: { fullName: string; username: string; email: string; phone: string; currentPassword: string; newPassword?: string }) => {
+    try {
+      const response = await fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error?.message ?? 'No se pudo actualizar tu cuenta.')
+      setCurrentUser((user) => ({ ...user, fullName: result.data.fullName, username: result.data.username, email: result.data.email, phone: result.data.phone }))
+      notify('Tu cuenta se actualizó correctamente')
+      return true
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'No se pudo actualizar tu cuenta.')
+      return false
     }
   }
   const removeMaterial = (id: string) => { setMaterials((current) => current.filter((m) => m.id !== id)); notify('Materia prima eliminada') }
@@ -423,6 +473,8 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
       case 'Seguimiento de operaciones': return <><Head eyebrow="Producción" title="Seguimiento de operaciones" subtitle="Inicio, fin y tiempo real de cada orden." /><Table head={['Orden', 'Producto', 'Estado', 'Inicio', 'Fin', 'Tiempo real (min)']} rows={orders.map((o) => [o.id, o.product, o.status, o.startedAt ?? '—', o.finishedAt ?? '—', o.minutes ?? '—'])} /></>
       case 'Productos terminados': return <><Head eyebrow="Producción" title="Productos terminados" subtitle="Stock disponible y unidades producidas por orden finalizada." /><Table head={['Producto', 'Disponible (liberado)', 'Pendiente de liberación', 'En retrabajo']} rows={finishedRows} empty="Aún no hay producto terminado." /><Table head={['Orden', 'Producto', 'Planificado', 'Producido', 'Yield', 'Fecha de fin']} rows={orders.filter((o) => o.status === 'Finalizada').map((o) => [o.id, o.product, `${o.qty} und`, `${o.produced} und`, o.qty ? pct(o.produced / o.qty) : '—', o.finishedAt ?? '—'])} empty="Aún no hay órdenes finalizadas." /></>
       case 'Reportes de gestión': return <ReportsPage orders={orders} materials={materials} qcLog={qcLog} />
+      case 'Usuarios y roles': return <UsersPage currentUserId={String(currentUser.id)} items={visible} search={search} setSearch={setSearch} onNew={() => openModal('Usuarios y roles')} onEdit={(item) => openModal('Usuarios y roles', item)} onDelete={removeUser} onSelect={setDetail} onUpdateStatus={updateRegistrationStatus} />
+      case 'Mi cuenta': return <ProfilePage user={currentUser} onSave={saveProfile} />
       default: return <ModulePage title={active} items={visible} search={search} setSearch={setSearch} onNew={() => fields[active] ? openModal(active) : notify('Módulo informativo listo para operar')} onEdit={(item) => openModal(active, item)} onDelete={(id) => active === 'Usuarios y roles' ? removeUser(id) : remove(active, id)} onSelect={setDetail} />
     }
   }
@@ -433,21 +485,23 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
         {groups.map((group, index) => {
           const isExpanded = expandedGroup === group.label
           const itemsId = `nav-items-${index}`
+          const visibleItems = group.items.filter(([label]) => (isAdmin || label !== 'Usuarios y roles') && (!isAdmin || label !== 'Mi cuenta'))
+          if (!visibleItems.length) return null
           return <div className="nav-group" key={group.label}>
             <button type="button" className="nav-label" aria-expanded={isExpanded} aria-controls={itemsId} onClick={() => setExpandedGroup(isExpanded ? '' : group.label)}>
               <span>{group.label}</span>
               <ChevronDown className="nav-chevron" aria-hidden="true" />
             </button>
             <div className="nav-items" id={itemsId} hidden={!isExpanded}>
-              {group.items.map(([label, Icon]) => <button className={`nav-item ${active === label ? 'active' : ''}`} key={label as string} onClick={() => nav(label as string)}><Icon /><span>{label as string}</span></button>)}
+              {visibleItems.map(([label, Icon]) => <button className={`nav-item ${active === label ? 'active' : ''}`} key={label as string} onClick={() => nav(label as string)}><Icon /><span>{label as string}</span></button>)}
             </div>
           </div>
         })}
       </nav>
-      <div className="sidebar-bottom"><div className="user-card"><div className="avatar">MS</div><div><strong>María Solís</strong><small>Administradora</small></div></div></div>
+      <div className="sidebar-bottom"><div className="user-card"><div className="avatar">{userInitials(currentUser.fullName)}</div><div><strong>{currentUser.fullName}</strong><small>{currentUser.role === 'administrador' ? 'Administrador' : 'Usuario'} · {currentUser.username}</small></div></div></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><button className="icon-button menu-trigger" aria-label="Abrir menú"><Menu /></button><div className="breadcrumbs"><span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Buscar"><Search /></button><button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button><div className="top-avatar">MS</div></div></header>
+      <header className="topbar"><button className="icon-button menu-trigger" aria-label="Abrir menú"><Menu /></button><div className="breadcrumbs"><span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Buscar"><Search /></button><button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button><div className="top-avatar" title={`${currentUser.fullName} · ${currentUser.role}`}>{userInitials(currentUser.fullName)}</div><span className="top-user-name">{currentUser.fullName}</span>{logoutButton}</div></header>
       <div className="content-wrap">{notice && <div className="toast-message"><CheckCircle2 />{notice}</div>}{page()}</div>
       <footer className="footer"><span>© 2024 Repostería Heydi</span><span>v1.0.0 · Managua, Nicaragua</span></footer>
     </main>
@@ -461,7 +515,115 @@ function Dashboard({ orders, records, extra, openPurchases, salesCount, onNew, o
 
 function ModulePage({ title, items, search, setSearch, onNew, onEdit, onDelete, onSelect }: { title: string; items: RecordItem[]; search: string; setSearch: (value: string) => void; onNew: () => void; onEdit: (item: RecordItem) => void; onDelete: (id: string) => void; onSelect: (item: RecordItem) => void }) { const canCreate = Boolean(fields[title]); return <><section className="page-heading"><div><p className="eyebrow">Módulo operativo</p><h1>{title}</h1><p className="subtitle">Administra información y relaciones del módulo.</p></div>{canCreate && <button className="primary-button" onClick={onNew}><Plus />Nuevo {title === 'Productos' ? 'producto' : 'registro'}</button>}</section><section className="panel module-panel"><div className="module-toolbar"><div className="search-box"><Search /><input aria-label={`Buscar en ${title}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nombre, código..." /></div><button className="outline-button" onClick={() => setSearch('')}>Limpiar</button></div><div className="record-list">{items.length ? items.map((item) => <div className="record-row" key={item.id}><button className="record-main record-link" onClick={() => onSelect(item)}><div className="record-icon"><Package /></div><span><strong>{item.name}</strong><small>{item.code ?? item.id} · {item.detail}</small></span></button><Badge status={item.status} /><button className="icon-button" aria-label={`Editar ${item.name}`} onClick={() => onEdit(item)}><Edit3 /></button><button className="icon-button danger" aria-label={`Eliminar ${item.name}`} onClick={() => onDelete(item.id)}><Trash2 /></button></div>) : <div className="empty-state"><AlertTriangle />No hay registros para mostrar.</div>}</div></section></> }
 
+function UsersPage({ currentUserId, items, search, setSearch, onNew, onEdit, onDelete, onSelect, onUpdateStatus }: { currentUserId: string; items: RecordItem[]; search: string; setSearch: (value: string) => void; onNew: () => void; onEdit: (item: RecordItem) => void; onDelete: (id: string) => void; onSelect: (item: RecordItem) => void; onUpdateStatus: (id: string, status: 'approved' | 'rejected') => void }) {
+  return <>
+    <Head eyebrow="Administración" title="Usuarios" subtitle="Revisa solicitudes de registro y administra quién puede acceder al ERP.">
+      <button className="primary-button" onClick={onNew}><Plus />Crear usuario</button>
+    </Head>
+    <section className="panel module-panel">
+      <div className="module-toolbar">
+        <div className="search-box"><Search /><input aria-label="Buscar usuarios" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nombre, usuario o correo..." /></div>
+        <button className="outline-button" onClick={() => setSearch('')}>Limpiar</button>
+      </div>
+      <div className="table-scroll">
+        <table>
+          <thead><tr><th>Nombre</th><th>Usuario</th><th>Correo</th><th>Teléfono</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody>
+            {items.map((item) => {
+              const status = item.data?.status ?? 'approved'
+              const isProtected = item.id === currentUserId || item.data?.role === 'administrador'
+              return <tr key={item.id}>
+                <td><button className="text-button" onClick={() => onSelect(item)}>{item.name}</button></td>
+                <td>{item.data?.username ?? '—'}</td>
+                <td>{item.data?.email ?? '—'}</td>
+                <td>{item.data?.phone || '—'}</td>
+                <td>{item.data?.role ?? 'usuario'}</td>
+                <td><Badge status={status} /></td>
+                <td className="row-actions">
+                  {!isProtected && status !== 'approved' && <button className="small-action" onClick={() => onUpdateStatus(item.id, 'approved')}>Aprobar</button>}
+                  {!isProtected && status === 'pending' && <button className="small-action muted" onClick={() => onUpdateStatus(item.id, 'rejected')}>Rechazar</button>}
+                  {!isProtected && <button className="icon-button" aria-label={`Editar ${item.name}`} onClick={() => onEdit(item)}><Edit3 /></button>}
+                  {!isProtected && <button className="icon-button danger" aria-label={`Eliminar ${item.name}`} onClick={() => onDelete(item.id)}><Trash2 /></button>}
+                  {isProtected && <span className="protected-user-label">{item.id === currentUserId ? 'Sesión actual' : 'Administrador protegido'}</span>}
+                </td>
+              </tr>
+            })}
+            {!items.length && <tr><td colSpan={7}><div className="empty-state"><AlertTriangle />No hay usuarios para mostrar.</div></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </>
+}
+
+function ProfilePage({ user, onSave }: {
+  user: { fullName: string; username: string; email: string; phone: string }
+  onSave: (updates: { fullName: string; username: string; email: string; phone: string; currentPassword: string; newPassword?: string }) => Promise<boolean>
+}) {
+  const [form, setForm] = useState({ ...user, currentPassword: '', newPassword: '', confirmPassword: '' })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setForm((current) => ({ ...current, ...user, currentPassword: '', newPassword: '', confirmPassword: '' }))
+  }, [user])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    if (!form.currentPassword) {
+      setError('Ingresa tu contraseña actual para guardar los cambios.')
+      return
+    }
+    if (form.newPassword && form.newPassword !== form.confirmPassword) {
+      setError('La nueva contraseña y su confirmación no coinciden.')
+      return
+    }
+    if (form.newPassword && form.newPassword.length < 12) {
+      setError('La nueva contraseña debe tener al menos 12 caracteres.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const saved = await onSave({
+        fullName: form.fullName,
+        username: form.username,
+        email: form.email,
+        phone: form.phone,
+        currentPassword: form.currentPassword,
+        ...(form.newPassword ? { newPassword: form.newPassword } : {}),
+      })
+      if (saved) setForm((current) => ({ ...current, currentPassword: '', newPassword: '', confirmPassword: '' }))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <>
+    <Head eyebrow="Cuenta personal" title="Mi cuenta" subtitle="Actualiza tus datos y contraseña. Se te pedirá la contraseña actual para confirmar los cambios." />
+    <form className="panel module-panel profile-form" onSubmit={submit}>
+      <div className="form-grid">
+        <label>Nombre completo<input required minLength={2} maxLength={100} value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></label>
+        <label>Nombre de usuario<input required minLength={3} maxLength={32} pattern="[a-zA-Z0-9._-]{3,32}" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
+        <label>Correo electrónico<input required type="email" maxLength={254} value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+        <label>Teléfono<input maxLength={40} value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+      </div>
+      <h2>Cambiar contraseña</h2>
+      <p className="profile-hint">Deja estos campos vacíos si no deseas cambiarla. Debe tener al menos 12 caracteres.</p>
+      <div className="form-grid">
+        <label>Contraseña actual<input required type="password" autoComplete="current-password" value={form.currentPassword} onChange={(event) => setForm({ ...form, currentPassword: event.target.value })} /></label>
+        <label>Nueva contraseña<input type="password" autoComplete="new-password" minLength={12} value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} /></label>
+        <label>Confirmar nueva contraseña<input type="password" autoComplete="new-password" minLength={12} value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} /></label>
+      </div>
+      {error && <p className="login-error profile-error" role="alert">{error}</p>}
+      <div className="modal-actions"><button className="primary-button" type="submit" disabled={saving}>{saving ? 'Guardando…' : 'Guardar cambios'}</button></div>
+    </form>
+  </>
+}
+
 function OrdersPage({ orders, onNew, updateOrder, onFinalize }: { orders: Order[]; onNew: () => void; updateOrder: (id: string, status: OrderStatus) => void; onFinalize: (order: Order) => void }) { return <><section className="page-heading"><div><p className="eyebrow">Producción</p><h1>Órdenes de producción</h1><p className="subtitle">Inicia, finaliza o cancela órdenes.</p></div><button className="primary-button" onClick={onNew}><Plus />Nueva orden</button></section><section className="order-cards">{(['Pendiente', 'En proceso', 'Finalizada', 'Cancelada'] as OrderStatus[]).map((status) => <div className="mini-stat" key={status}><span>{status}</span><strong>{orders.filter((o) => o.status === status).length}</strong></div>)}</section><section className="panel module-panel"><div className="table-scroll"><table><thead><tr><th>Orden</th><th>Producto</th><th>Planificado</th><th>Producido</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td>{order.id}</td><td>{order.product}</td><td>{order.qty} und</td><td>{order.produced} und</td><td><Badge status={order.status} /></td><td className="row-actions">{order.status === 'Pendiente' && <button className="small-action" onClick={() => updateOrder(order.id, 'En proceso')}>Iniciar</button>}{order.status === 'En proceso' && <button className="small-action" onClick={() => onFinalize(order)}>Finalizar</button>}{!['Finalizada', 'Cancelada'].includes(order.status) && <button className="small-action muted" onClick={() => updateOrder(order.id, 'Cancelada')}><Pause />Cancelar</button>}</td></tr>)}</tbody></table></div></section></> }
+
 
 function EntryPage({ materials, movements, onAdd }: { materials: Material[]; movements: Movement[]; onAdd: (code: string, qty: number, unitCost: number, ref: string) => boolean }) {
   const [code, setCode] = useState(''); const [qty, setQty] = useState(''); const [cost, setCost] = useState(''); const [ref, setRef] = useState('')

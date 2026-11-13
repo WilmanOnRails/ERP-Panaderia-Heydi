@@ -82,7 +82,7 @@ export async function POST(request: Request) {
           { email: { equals: identifier, mode: "insensitive" } },
         ],
       },
-      select: { id: true, fullName: true, username: true, email: true, role: true, passwordHash: true },
+      select: { id: true, fullName: true, username: true, email: true, role: true, status: true, passwordHash: true },
     })
   } catch (error) {
     console.error("Login database lookup failed", error)
@@ -99,6 +99,9 @@ export async function POST(request: Request) {
 
   if (!user || !validPassword) {
     return NextResponse.json({ error: "Usuario o contraseña incorrectos." }, { status: 401 })
+  }
+  if (user.status !== "approved") {
+    return NextResponse.json({ error: "Tu cuenta aún no ha sido aprobada por un administrador." }, { status: 403 })
   }
 
   let token: string

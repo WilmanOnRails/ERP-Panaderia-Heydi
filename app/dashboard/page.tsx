@@ -7,12 +7,10 @@ export default async function DashboardPage() {
   const user = await getAuthenticatedUser()
   if (!user) redirect('/login')
   return (
-    <>
-      <div className="session-controls">
-        <span>{user.fullName}</span>
-        <LogoutButton />
-      </div>
-      <ErpDashboard isAdmin={user.role === 'administrador'} />
-    </>
+    <ErpDashboard
+      currentUser={{ id: user.id, fullName: user.fullName, username: user.username, email: user.email, phone: user.phone, role: user.role }}
+      isAdmin={user.role === 'administrador'}
+      logoutButton={<LogoutButton />}
+    />
   )
 }
