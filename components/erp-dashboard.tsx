@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Archive, Bell, Boxes, ChevronDown, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download } from 'lucide-react'
+import { Archive, Bell, Boxes, ChevronDown, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download, CircleDollarSign } from 'lucide-react'
 
 type OrderStatus = 'Pendiente' | 'En proceso' | 'Finalizada' | 'Cancelada'
 type RecordItem = { id: string; name: string; code?: string; detail: string; status: 'Activo' | 'Inactivo'; data?: Record<string, string> }
@@ -17,7 +17,7 @@ type PurchaseStatus = 'Pendiente' | 'Recibida parcial' | 'Recibida' | 'Cancelada
 type PurchaseLine = { code: string; qty: number; cost: number; received: number }
 type Purchase = { id: string; supplier: string; date: string; status: PurchaseStatus; lines: PurchaseLine[]; notes?: string }
 type SaleLine = { product: string; qty: number; price: number }
-type Sale = { id: string; kind: 'Venta' | 'Despacho'; customer: string; date: string; lines: SaleLine[]; total: number }
+type Sale = { id: string; kind: 'Venta' | 'Despacho'; customer: string; date: string; createdAt?: string; lines: SaleLine[]; total: number }
 type Field = { key: string; label: string; type?: string; required?: boolean }
 
 // ---------- Utilidades ----------
@@ -46,6 +46,17 @@ const productInfo = (records: Record<string, RecordItem[]>, name: string) => {
 }
 // Numero de documento: OC-2026-0001, VT-2026-0001...
 const nextDoc = (prefix: string, count: number) => `${prefix}-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+const saleTimestamp = (sale: Sale) => {
+  const timestamp = sale.createdAt ? new Date(sale.createdAt) : null
+  if (timestamp && !Number.isNaN(timestamp.getTime())) return timestamp
+  const localDate = sale.date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (localDate) {
+    const parsedLocalDate = new Date(Number(localDate[3]), Number(localDate[2]) - 1, Number(localDate[1]))
+    if (!Number.isNaN(parsedLocalDate.getTime())) return parsedLocalDate
+  }
+  const parsedDate = new Date(sale.date)
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate
+}
 
 // Etiquetas de los tres "cubos" de producto terminado
 const qcLabel: Record<'pending' | 'rework' | 'available', string> = { pending: 'Pendiente de liberación', rework: 'En retrabajo', available: 'Disponible (liberado)' }
@@ -61,6 +72,7 @@ const groups = [
   { label: 'Datos maestros', items: [['Productos', Package], ['Materias primas', ShoppingBasket], ['BOM / Recetas', ClipboardList], ['Rutas de producción', Factory], ['Almacenes', Archive], ['Proveedores', Truck], ['Clientes', Users]] },
   { label: 'Compras', items: [['Órdenes de compra', ClipboardList], ['Recepción de material', Truck]] },
   { label: 'Inventario', items: [['Existencias', Boxes], ['Entradas', Plus], ['Salidas', Package], ['Movimientos', ClipboardList]] },
+  { label: 'Ventas', items: [['Ingresos por venta', CircleDollarSign]] },
   { label: 'Producción', items: [['Órdenes de producción', Factory], ['Disponibilidad de materiales', Boxes], ['Consumo de materias primas', ShoppingBasket], ['Seguimiento de operaciones', ClipboardList], ['Productos terminados', Package], ['Calidad y liberación', CheckCircle2]] },
   { label: 'Reportes', items: [['Reportes de gestión', ClipboardList]] },
   { label: 'Administración', items: [['Usuarios y roles', Users], ['Configuración', ClipboardList]] },
@@ -350,7 +362,7 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
     const moves: Movement[] = finalLines.map((l, i) => ({ id: Date.now() + i, date: stamp, type: kind, code: productInfo(records, l.product).code, material: l.product, qty: l.qty, unit: 'und', total: l.qty * l.price, ref: id }))
     setProductStock((current) => { const next = { ...current }; Object.keys(totals).forEach((name) => { next[name] = (next[name] ?? 0) - totals[name] }); return next })
     setMovements((current) => [...[...moves].reverse(), ...current])
-    setSales((current) => [{ id, kind, customer, date: stamp, lines: finalLines, total }, ...current])
+    setSales((current) => [{ id, kind, customer, date: stamp, createdAt: new Date().toISOString(), lines: finalLines, total }, ...current])
     notify(`${kind} ${id} registrado: stock de producto terminado actualizado`)
     return true
   }
@@ -408,12 +420,13 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
   const nav = selectPage
   const page = () => {
     switch (active) {
-      case 'Dashboard': return <Dashboard orders={orders} records={records} extra={materials.length} openPurchases={purchases.filter((p) => p.status === 'Pendiente' || p.status === 'Recibida parcial').length} salesCount={sales.length} onNew={() => selectPage('Órdenes de producción')} onReset={resetAll} onDemo={loadDemo} />
+      case 'Dashboard': return <Dashboard orders={orders} records={records} extra={materials.length} openPurchases={purchases.filter((p) => p.status === 'Pendiente' || p.status === 'Recibida parcial').length} salesCount={sales.length} salesIncome={sum(sales.filter((sale) => sale.kind === 'Venta').map((sale) => sale.total))} onNew={() => selectPage('Órdenes de producción')} onRevenue={() => selectPage('Ingresos por venta')} onReset={resetAll} onDemo={loadDemo} />
       case 'Órdenes de producción': return <OrdersPage orders={orders} onNew={() => openModal('Órdenes de producción')} updateOrder={updateOrder} onFinalize={setFinalizing} />
       case 'Disponibilidad de materiales': return <AvailabilityPage orders={orders} records={records} materials={materials} onBuy={(draft) => { setPurchaseDraft(draft); selectPage('Órdenes de compra') }} />
       case 'Órdenes de compra': return <PurchasesPage purchases={purchases} suppliers={(records.Proveedores ?? []).map((s) => s.name)} materials={materials} draft={purchaseDraft} clearDraft={() => setPurchaseDraft(null)} onCreate={createPurchase} onCancel={cancelPurchase} onGoReceive={() => nav('Recepción de material')} />
       case 'Recepción de material': return <ReceptionPage purchases={purchases} materials={materials} movements={movements} onReceive={receivePurchase} />
-      case 'Salidas': return <SalesPage sales={sales} customers={(records.Clientes ?? []).map((c) => c.name)} products={productNames.map((name) => ({ name, price: productInfo(records, name).price }))} stock={productStock} onCreate={createSale} />
+      case 'Salidas': return <SalesPage sales={sales} customers={(records.Clientes ?? []).map((c) => c.name)} products={productNames.map((name) => ({ name, price: productInfo(records, name).price }))} stock={productStock} onCreate={createSale} onViewRevenue={() => nav('Ingresos por venta')} />
+      case 'Ingresos por venta': return <RevenuePage sales={sales} />
       case 'Calidad y liberación': return <QualityPage products={Array.from(new Set([...productNames, ...Object.keys(productStock), ...Object.keys(qc)]))} qc={qc} stock={productStock} required={qcRequired} log={qcLog} onToggle={(name) => setQcRequired((current) => ({ ...current, [name]: !current[name] }))} onAction={qcAction} />
       case 'Materias primas': return <><Head eyebrow="Módulo operativo" title="Materias primas" subtitle="Catálogo de insumos. El stock y el costo se actualizan con las Entradas."><button className="primary-button" onClick={() => openModal('Materias primas')}><Plus />Nuevo registro</button></Head><section className="panel module-panel">{materials.length ? <div className="table-scroll"><table><thead><tr><th>Código</th><th>Nombre</th><th>Unidad</th><th>Stock</th><th>Costo promedio</th><th>Acciones</th></tr></thead><tbody>{materials.map((m) => <tr key={m.id}><td>{m.code}</td><td>{m.name}</td><td>{m.unit}</td><td>{num(m.stock)}</td><td>{money(m.cost)}</td><td className="row-actions"><button className="icon-button" aria-label={`Editar ${m.name}`} onClick={() => editMaterial(m)}><Edit3 /></button><button className="icon-button danger" aria-label={`Eliminar ${m.name}`} onClick={() => removeMaterial(m.id)}><Trash2 /></button></td></tr>)}</tbody></table></div> : <div className="empty-state"><AlertTriangle />No hay registros para mostrar.</div>}</section></>
       case 'Existencias': return <><Head eyebrow="Inventario" title="Existencias" subtitle="Stock actual y valor del inventario de materias primas y de producto terminado." /><Table head={['Código', 'Materia prima', 'Stock', 'Costo promedio', 'Valor']} rows={[...materials.map((m) => [m.code, m.name, `${num(m.stock)} ${m.unit}`, money(m.cost), money(m.stock * m.cost)]), ...(materials.length ? [['', 'TOTAL', '', '', money(sum(materials.map((m) => m.stock * m.cost)))]] : [])]} /><section className="panel module-panel"><div className="panel-heading"><div><h2>Producto terminado</h2><p>Unidades disponibles para venta o despacho.</p></div></div></section><Table head={['Producto', 'Disponible (liberado)', 'Pendiente de liberación', 'En retrabajo']} rows={finishedRows} empty="Aún no hay producto terminado: finaliza una orden de producción." /></>
@@ -422,7 +435,7 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
       case 'Consumo de materias primas': return <><Head eyebrow="Producción" title="Consumo de materias primas" subtitle="Insumos descontados al finalizar cada orden, según la receta." /><Table head={['Fecha', 'Orden', 'Materia prima', 'Cantidad consumida', 'Costo']} rows={movements.filter((m) => m.type === 'Consumo').map((m) => [m.date, m.ref, m.material, `${num(m.qty)} ${m.unit}`, money(m.total)])} empty="Aún no hay consumo: finaliza una orden con receta." /></>
       case 'Seguimiento de operaciones': return <><Head eyebrow="Producción" title="Seguimiento de operaciones" subtitle="Inicio, fin y tiempo real de cada orden." /><Table head={['Orden', 'Producto', 'Estado', 'Inicio', 'Fin', 'Tiempo real (min)']} rows={orders.map((o) => [o.id, o.product, o.status, o.startedAt ?? '—', o.finishedAt ?? '—', o.minutes ?? '—'])} /></>
       case 'Productos terminados': return <><Head eyebrow="Producción" title="Productos terminados" subtitle="Stock disponible y unidades producidas por orden finalizada." /><Table head={['Producto', 'Disponible (liberado)', 'Pendiente de liberación', 'En retrabajo']} rows={finishedRows} empty="Aún no hay producto terminado." /><Table head={['Orden', 'Producto', 'Planificado', 'Producido', 'Yield', 'Fecha de fin']} rows={orders.filter((o) => o.status === 'Finalizada').map((o) => [o.id, o.product, `${o.qty} und`, `${o.produced} und`, o.qty ? pct(o.produced / o.qty) : '—', o.finishedAt ?? '—'])} empty="Aún no hay órdenes finalizadas." /></>
-      case 'Reportes de gestión': return <ReportsPage orders={orders} materials={materials} qcLog={qcLog} />
+      case 'Reportes de gestión': return <ReportsPage orders={orders} materials={materials} qcLog={qcLog} sales={sales} />
       default: return <ModulePage title={active} items={visible} search={search} setSearch={setSearch} onNew={() => fields[active] ? openModal(active) : notify('Módulo informativo listo para operar')} onEdit={(item) => openModal(active, item)} onDelete={(id) => active === 'Usuarios y roles' ? removeUser(id) : remove(active, id)} onSelect={setDetail} />
     }
   }
@@ -457,7 +470,24 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
   </div>
 }
 
-function Dashboard({ orders, records, extra, openPurchases, salesCount, onNew, onReset, onDemo }: { orders: Order[]; records: Record<string, RecordItem[]>; extra: number; openPurchases: number; salesCount: number; onNew: () => void; onReset: () => void; onDemo: () => void }) { const total = Object.values(records).reduce((sum, list) => sum + list.length, 0) + extra; return <><section className="page-heading"><div><p className="eyebrow">Panel principal</p><h1>Buenos días, María</h1><p className="subtitle">Resumen operativo de tu panadería para hoy.</p></div><button className="primary-button" onClick={onNew}><Plus />Nueva orden de producción</button></section><section className="metric-grid">{[['Registros maestros', total], ['Órdenes pendientes', orders.filter((o) => o.status === 'Pendiente').length], ['En proceso', orders.filter((o) => o.status === 'En proceso').length], ['Finalizadas', orders.filter((o) => o.status === 'Finalizada').length], ['Compras por recibir', openPurchases], ['Ventas y despachos', salesCount]].map(([label, value]) => <article className="metric-card" key={String(label)}><div className="metric-icon package"><Package /></div><div className="metric-copy"><p>{label}</p><strong>{value}</strong><small>Actualizado ahora</small></div></article>)}</section><section className="panel module-panel"><div className="panel-heading"><div><h2>Accesos rápidos</h2><p>Gestiona tus catálogos y operaciones.</p></div></div><div className="quick-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}><button className="primary-button" onClick={() => onNew()}><Plus />Crear orden</button><button className="outline-button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>Ver actividad</button><button className="outline-button" onClick={onDemo}><Download />Cargar datos de ejemplo</button><button className="outline-button" onClick={onReset}><Trash2 />Restablecer datos</button></div></section></> }
+function Dashboard({ orders, records, extra, openPurchases, salesCount, salesIncome, onNew, onRevenue, onReset, onDemo }: { orders: Order[]; records: Record<string, RecordItem[]>; extra: number; openPurchases: number; salesCount: number; salesIncome: number; onNew: () => void; onRevenue: () => void; onReset: () => void; onDemo: () => void }) {
+  const total = Object.values(records).reduce((sum, list) => sum + list.length, 0) + extra
+  return <>
+    <section className="page-heading"><div><p className="eyebrow">Panel principal</p><h1>Buenos días, María</h1><p className="subtitle">Resumen operativo de tu panadería para hoy.</p></div><button className="primary-button" onClick={onNew}><Plus />Nueva orden de producción</button></section>
+    <section className="metric-grid">
+      {[
+        ['Registros maestros', total],
+        ['Órdenes pendientes', orders.filter((o) => o.status === 'Pendiente').length],
+        ['En proceso', orders.filter((o) => o.status === 'En proceso').length],
+        ['Finalizadas', orders.filter((o) => o.status === 'Finalizada').length],
+        ['Compras por recibir', openPurchases],
+        ['Ventas y despachos', salesCount],
+      ].map(([label, value]) => <article className="metric-card" key={String(label)}><div className="metric-icon package"><Package /></div><div className="metric-copy"><p>{label}</p><strong>{value}</strong><small>Actualizado ahora</small></div></article>)}
+      <button type="button" className="metric-card" onClick={onRevenue} style={{ width: '100%', color: 'inherit', font: 'inherit', textAlign: 'left', border: 0, cursor: 'pointer' }}><div className="metric-icon package"><CircleDollarSign /></div><div className="metric-copy"><p>Ingresos por venta</p><strong>{money(salesIncome)}</strong><small>Ver detalle de ventas</small></div></button>
+    </section>
+    <section className="panel module-panel"><div className="panel-heading"><div><h2>Accesos rápidos</h2><p>Gestiona tus catálogos y operaciones.</p></div></div><div className="quick-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}><button className="primary-button" onClick={() => onNew()}><Plus />Crear orden</button><button className="outline-button" onClick={onRevenue}><CircleDollarSign />Ver ingresos por venta</button><button className="outline-button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>Ver actividad</button><button className="outline-button" onClick={onDemo}><Download />Cargar datos de ejemplo</button><button className="outline-button" onClick={onReset}><Trash2 />Restablecer datos</button></div></section>
+  </>
+}
 
 function ModulePage({ title, items, search, setSearch, onNew, onEdit, onDelete, onSelect }: { title: string; items: RecordItem[]; search: string; setSearch: (value: string) => void; onNew: () => void; onEdit: (item: RecordItem) => void; onDelete: (id: string) => void; onSelect: (item: RecordItem) => void }) { const canCreate = Boolean(fields[title]); return <><section className="page-heading"><div><p className="eyebrow">Módulo operativo</p><h1>{title}</h1><p className="subtitle">Administra información y relaciones del módulo.</p></div>{canCreate && <button className="primary-button" onClick={onNew}><Plus />Nuevo {title === 'Productos' ? 'producto' : 'registro'}</button>}</section><section className="panel module-panel"><div className="module-toolbar"><div className="search-box"><Search /><input aria-label={`Buscar en ${title}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nombre, código..." /></div><button className="outline-button" onClick={() => setSearch('')}>Limpiar</button></div><div className="record-list">{items.length ? items.map((item) => <div className="record-row" key={item.id}><button className="record-main record-link" onClick={() => onSelect(item)}><div className="record-icon"><Package /></div><span><strong>{item.name}</strong><small>{item.code ?? item.id} · {item.detail}</small></span></button><Badge status={item.status} /><button className="icon-button" aria-label={`Editar ${item.name}`} onClick={() => onEdit(item)}><Edit3 /></button><button className="icon-button danger" aria-label={`Eliminar ${item.name}`} onClick={() => onDelete(item.id)}><Trash2 /></button></div>) : <div className="empty-state"><AlertTriangle />No hay registros para mostrar.</div>}</div></section></> }
 
@@ -469,7 +499,7 @@ function EntryPage({ materials, movements, onAdd }: { materials: Material[]; mov
   return <><Head eyebrow="Inventario" title="Entradas" subtitle="Entrada directa de materias primas, sin orden de compra. Para compras formales usa Órdenes de compra y Recepción de material." /><section className="panel module-panel"><div className="form-grid"><label>Materia prima<select value={code} onChange={(event) => setCode(event.target.value)}><option value="">Selecciona...</option>{materials.map((m) => <option key={m.code} value={m.code}>{m.name} ({m.unit})</option>)}</select></label><label>Cantidad recibida<input type="number" min="0" value={qty} onChange={(event) => setQty(event.target.value)} /></label><label>Costo unitario de compra (C$)<input type="number" min="0" value={cost} onChange={(event) => setCost(event.target.value)} /></label><label>Referencia (factura, proveedor)<input value={ref} onChange={(event) => setRef(event.target.value)} /></label></div><div className="modal-actions"><button className="primary-button" onClick={submit}><Plus />Registrar entrada</button></div></section><Table head={['Fecha', 'Materia prima', 'Cantidad', 'Valor', 'Referencia']} rows={movements.filter((m) => m.type === 'Entrada').map((m) => [m.date, m.material, `${num(m.qty)} ${m.unit}`, money(m.total), m.ref])} empty="Aún no hay entradas registradas." /></>
 }
 
-function ReportsPage({ orders, materials, qcLog }: { orders: Order[]; materials: Material[]; qcLog: QcRecord[] }) {
+function ReportsPage({ orders, materials, qcLog, sales }: { orders: Order[]; materials: Material[]; qcLog: QcRecord[]; sales: Sale[] }) {
   const done = orders.filter((o) => o.status === 'Finalizada')
   const planned = sum(done.map((o) => o.qty)); const produced = sum(done.map((o) => o.produced))
   const yieldValue = planned ? produced / planned : 0
@@ -479,14 +509,25 @@ function ReportsPage({ orders, materials, qcLog }: { orders: Order[]; materials:
   const timed = done.filter((o) => (o.minutes ?? 0) > 0)
   const avgCycle = timed.length ? sum(timed.map((o) => o.minutes ?? 0)) / timed.length : 0
   const stockValue = sum(materials.map((m) => m.stock * m.cost))
-  const cards = [['Yield (rendimiento)', pct(yieldValue), `${produced} producidas de ${planned} planificadas`], ['Costo unitario', money(unitCost), 'Costo de insumos ÷ unidades producidas'], ['Tiempo de ciclo', `${num(avgCycle, 1)} min`, 'Promedio por orden finalizada'], ['Merma', `${planned - produced} und`, 'Planificadas − producidas'], ['Consumo de insumos', money(costTotal), 'Costo total consumido en producción'], ['Valor del inventario', money(stockValue), 'Existencias × costo promedio'], ['Scrap', `${num(sum(qcLog.filter((r) => r.action === 'Scrap').map((r) => r.qty)), 0)} und`, `Pérdida: ${money(sum(qcLog.filter((r) => r.action === 'Scrap').map((r) => r.value)))}`], ['Retrabajo', `${num(sum(qcLog.filter((r) => r.action === 'Retrabajo').map((r) => r.qty)), 0)} und`, 'Unidades enviadas a retrabajo']]
+  const revenueSales = sales.filter((sale) => sale.kind === 'Venta')
+  const revenue = sum(revenueSales.map((sale) => sale.total))
+  const cards = [['Yield (rendimiento)', pct(yieldValue), `${produced} producidas de ${planned} planificadas`], ['Ingresos por venta', money(revenue), `${revenueSales.length} ventas registradas · despachos excluidos`], ['Costo unitario', money(unitCost), 'Costo de insumos ÷ unidades producidas'], ['Tiempo de ciclo', `${num(avgCycle, 1)} min`, 'Promedio por orden finalizada'], ['Merma', `${planned - produced} und`, 'Planificadas − producidas'], ['Consumo de insumos', money(costTotal), 'Costo total consumido en producción'], ['Valor del inventario', money(stockValue), 'Existencias × costo promedio'], ['Scrap', `${num(sum(qcLog.filter((r) => r.action === 'Scrap').map((r) => r.qty)), 0)} und`, `Pérdida: ${money(sum(qcLog.filter((r) => r.action === 'Scrap').map((r) => r.value)))}`], ['Retrabajo', `${num(sum(qcLog.filter((r) => r.action === 'Retrabajo').map((r) => r.qty)), 0)} und`, 'Unidades enviadas a retrabajo']]
   const rows = done.map((o) => [o.id, o.product, o.qty, o.produced, o.qty ? pct(o.produced / o.qty) : '—', money(o.cost ?? 0), o.produced && o.cost ? money(o.cost / o.produced) : '—', o.minutes ?? '—'])
   const exportCsv = () => {
-    const lines = [['Orden', 'Producto', 'Planificado', 'Producido', 'Yield', 'Costo insumos (C$)', 'Costo unitario (C$)', 'Minutos'], ...done.map((o) => [o.id, o.product, o.qty, o.produced, o.qty ? (o.produced / o.qty).toFixed(4) : '', (o.cost ?? 0).toFixed(2), o.produced && o.cost ? (o.cost / o.produced).toFixed(2) : '', o.minutes ?? ''])]
-    const blob = new Blob(['\ufeff' + lines.map((l) => l.join(',')).join('\n')], { type: 'text/csv;charset=utf-8' })
+    const lines: (string | number)[][] = [
+      ['Ingresos por venta'],
+      ['Fecha', 'Documento', 'Cliente', 'Detalle', 'Ingreso (C$)'],
+      ...revenueSales.map((sale) => [sale.date, sale.id, sale.customer, sale.lines.map((line) => `${line.product} x ${line.qty}`).join(' | '), sale.total.toFixed(2)]),
+      [],
+      ['Órdenes de producción'],
+      ['Orden', 'Producto', 'Planificado', 'Producido', 'Yield', 'Costo insumos (C$)', 'Costo unitario (C$)', 'Minutos'],
+      ...done.map((o) => [o.id, o.product, o.qty, o.produced, o.qty ? (o.produced / o.qty).toFixed(4) : '', (o.cost ?? 0).toFixed(2), o.produced && o.cost ? (o.cost / o.produced).toFixed(2) : '', o.minutes ?? '']),
+    ]
+    const csv = lines.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'kpis-erp-heydi.csv'; a.click(); URL.revokeObjectURL(url)
   }
-  return <><Head eyebrow="Reportes" title="Reportes de gestión" subtitle="Indicadores calculados con los datos del ERP: órdenes, consumo e inventario."><button className="outline-button" onClick={exportCsv}><Download />Exportar CSV</button></Head><section className="metric-grid">{cards.map(([label, value, hint]) => <article className="metric-card" key={label}><div className="metric-icon package"><Package /></div><div className="metric-copy"><p>{label}</p><strong>{value}</strong><small>{hint}</small></div></article>)}</section><Table head={['Orden', 'Producto', 'Planificado', 'Producido', 'Yield', 'Costo insumos', 'Costo unitario', 'Minutos']} rows={rows} empty="Finaliza al menos una orden para calcular los indicadores." /><section className="panel module-panel"><div className="panel-heading"><div><h2>Fórmulas</h2><p>Yield = producidas ÷ planificadas · Costo unitario = costo de insumos consumidos ÷ unidades producidas · Tiempo de ciclo = promedio de minutos reales por orden · Merma = planificadas − producidas.</p></div></div></section></>
+  return <><Head eyebrow="Reportes" title="Reportes de gestión" subtitle="Indicadores calculados con los datos del ERP: ventas, órdenes, consumo e inventario."><button className="outline-button" onClick={exportCsv}><Download />Exportar CSV</button></Head><section className="metric-grid">{cards.map(([label, value, hint]) => <article className="metric-card" key={label}><div className="metric-icon package"><Package /></div><div className="metric-copy"><p>{label}</p><strong>{value}</strong><small>{hint}</small></div></article>)}</section><Table head={['Fecha', 'Documento', 'Cliente', 'Detalle', 'Ingreso']} rows={revenueSales.map((sale) => [sale.date, sale.id, sale.customer, sale.lines.map((line) => `${line.product} × ${num(line.qty, 0)}`).join(' · '), money(sale.total)])} empty="Aún no hay ingresos por venta registrados." /><Table head={['Orden', 'Producto', 'Planificado', 'Producido', 'Yield', 'Costo insumos', 'Costo unitario', 'Minutos']} rows={rows} empty="Finaliza al menos una orden para calcular los indicadores." /><section className="panel module-panel"><div className="panel-heading"><div><h2>Fórmulas</h2><p>Los ingresos suman únicamente documentos de tipo Venta; los despachos no se contabilizan. Yield = producidas ÷ planificadas · Costo unitario = costo de insumos consumidos ÷ unidades producidas · Tiempo de ciclo = promedio de minutos reales por orden · Merma = planificadas − producidas.</p></div></div></section></>
 }
 
 function FinalizeModal({ order, onClose, onConfirm }: { order: Order; onClose: () => void; onConfirm: (produced: number, minutes: number) => boolean }) {
@@ -581,14 +622,81 @@ function ReceptionPage({ purchases, materials, movements, onReceive }: { purchas
     <Table head={['Fecha', 'Orden', 'Materia prima', 'Cantidad', 'Valor']} rows={history.map((m) => [m.date, m.ref, m.material, `${num(m.qty)} ${m.unit}`, money(m.total)])} empty="Aún no hay recepciones registradas." /></>
 }
 
+type RevenuePeriod = 'all' | 'today' | 'month'
+
+function RevenuePage({ sales }: { sales: Sale[] }) {
+  const [period, setPeriod] = useState<RevenuePeriod>('all')
+  const revenueSales = sales.filter((sale) => {
+    if (sale.kind !== 'Venta') return false
+    if (period === 'all') return true
+    const date = saleTimestamp(sale)
+    if (!date) return false
+    const today = new Date()
+    if (period === 'today') {
+      return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate()
+    }
+    return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth()
+  })
+  const income = sum(revenueSales.map((sale) => sale.total))
+  const averageTicket = revenueSales.length ? income / revenueSales.length : 0
+  const byCustomer = Object.entries(revenueSales.reduce<Record<string, number>>((totals, sale) => {
+    totals[sale.customer] = (totals[sale.customer] ?? 0) + sale.total
+    return totals
+  }, {})).sort((a, b) => b[1] - a[1])
+  const byProduct = Object.entries(revenueSales.reduce<Record<string, { amount: number; qty: number }>>((totals, sale) => {
+    sale.lines.forEach((line) => {
+      const current = totals[line.product] ?? { amount: 0, qty: 0 }
+      totals[line.product] = { amount: current.amount + line.qty * line.price, qty: current.qty + line.qty }
+    })
+    return totals
+  }, {})).sort((a, b) => b[1].amount - a[1].amount)
+  const exportCsv = () => {
+    const rows = [
+      ['Fecha', 'Documento', 'Cliente', 'Productos', 'Ingreso (C$)'],
+      ...revenueSales.map((sale) => [sale.date, sale.id, sale.customer, sale.lines.map((line) => `${line.product} x ${line.qty}`).join(' | '), sale.total.toFixed(2)]),
+    ]
+    const csv = rows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const url = URL.createObjectURL(new Blob(['\ufeff', csv], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'ingresos-por-venta.csv'
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+  const periodLabel = period === 'today' ? 'hoy' : period === 'month' ? 'este mes' : 'en total'
+
+  return <>
+    <Head eyebrow="Ventas" title="Ingresos por venta" subtitle="Consulta los ingresos de ventas registradas, clientes y productos. Los despachos no se consideran ingresos.">
+      <select style={{ ...inputBox, width: 180 }} aria-label="Filtrar periodo de ingresos" value={period} onChange={(event) => setPeriod(event.target.value as RevenuePeriod)}>
+        <option value="all">Todo el historial</option>
+        <option value="today">Hoy</option>
+        <option value="month">Este mes</option>
+      </select>
+      <button className="outline-button" onClick={exportCsv}><Download />Exportar CSV</button>
+    </Head>
+    <section className="metric-grid">
+      {[
+        ['Ingresos', money(income), `Ventas registradas ${periodLabel}`],
+        ['Ventas', String(revenueSales.length), `Documentos ${periodLabel}`],
+        ['Ticket promedio', money(averageTicket), 'Ingreso ÷ cantidad de ventas'],
+      ].map(([label, value, hint]) => <article className="metric-card" key={label}><div className="metric-icon package"><CircleDollarSign /></div><div className="metric-copy"><p>{label}</p><strong>{value}</strong><small>{hint}</small></div></article>)}
+    </section>
+    <Table head={['Fecha', 'Documento', 'Cliente', 'Detalle', 'Ingreso']} rows={revenueSales.map((sale) => [sale.date, sale.id, sale.customer, sale.lines.map((line) => `${line.product} × ${num(line.qty, 0)}`).join(' · '), money(sale.total)])} empty="No hay ventas en el periodo seleccionado. Registra una venta desde Inventario → Salidas." />
+    <section className="metric-grid">
+      <div><Head eyebrow="Análisis" title="Ingresos por cliente" subtitle="Totales de las ventas incluidas en el periodo seleccionado." /><Table head={['Cliente', 'Ingreso']} rows={byCustomer.map(([customer, total]) => [customer, money(total)])} empty="No hay ingresos de clientes en este periodo." /></div>
+      <div><Head eyebrow="Análisis" title="Ingresos por producto" subtitle="Importe y unidades vendidas en el periodo seleccionado." /><Table head={['Producto', 'Unidades', 'Ingreso']} rows={byProduct.map(([product, totals]) => [product, num(totals.qty, 0), money(totals.amount)])} empty="No hay productos vendidos en este periodo." /></div>
+    </section>
+  </>
+}
+
 type SaleDraftRow = { product: string; qty: string; price: string }
-function SalesPage({ sales, customers, products, stock, onCreate }: { sales: Sale[]; customers: string[]; products: { name: string; price: number }[]; stock: Record<string, number>; onCreate: (kind: 'Venta' | 'Despacho', customer: string, lines: { product: string; qty: number; price: number }[]) => boolean }) {
+function SalesPage({ sales, customers, products, stock, onCreate, onViewRevenue }: { sales: Sale[]; customers: string[]; products: { name: string; price: number }[]; stock: Record<string, number>; onCreate: (kind: 'Venta' | 'Despacho', customer: string, lines: { product: string; qty: number; price: number }[]) => boolean; onViewRevenue: () => void }) {
   const [kind, setKind] = useState<'Venta' | 'Despacho'>('Venta'); const [customer, setCustomer] = useState('')
   const [rows, setRows] = useState<SaleDraftRow[]>([{ product: '', qty: '', price: '' }])
   const setRow = (index: number, patch: Partial<SaleDraftRow>) => setRows((current) => current.map((r, i) => i === index ? { ...r, ...patch } : r))
   const total = kind === 'Venta' ? sum(rows.map((r) => (Number(r.qty) * Number(r.price)) || 0)) : 0
   const submit = () => { if (onCreate(kind, customer, rows.map((r) => ({ product: r.product, qty: Number(r.qty), price: Number(r.price) })))) { setCustomer(''); setRows([{ product: '', qty: '', price: '' }]) } }
-  return <><Head eyebrow="Inventario" title="Salidas" subtitle="Venta o despacho de producto terminado. Descuenta el stock disponible y deja el movimiento registrado." />
+  return <><Head eyebrow="Inventario" title="Salidas" subtitle="Venta o despacho de producto terminado. Descuenta el stock disponible y deja el movimiento registrado."><button className="outline-button" onClick={onViewRevenue}><CircleDollarSign />Ver ingresos por venta</button></Head>
     <section className="panel module-panel">
       <div className="form-grid">
         <label>Tipo de salida<select value={kind} onChange={(event) => setKind(event.target.value as 'Venta' | 'Despacho')}><option value="Venta">Venta (se cobra)</option><option value="Despacho">Despacho (sin cobro)</option></select></label>
