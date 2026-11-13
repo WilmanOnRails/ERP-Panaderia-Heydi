@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ErpProduct {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique @db.Text
+  name      String   @db.Text
+  breadType String   @map("bread_type") @db.Text
+  units     Int      @default(1)
+  price     Decimal  @default(0) @db.Decimal(12, 2)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("erp_products")
+}
+
+model ErpRawMaterial {
+  id             Int      @id @default(autoincrement())
+  code           String   @unique @db.Text
+  name           String   @db.Text
+  stock          Decimal  @default(0) @db.Decimal(12, 3)
+  availableUnits Decimal  @default(0) @map("available_units") @db.Decimal(12, 3)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("erp_raw_materials")
+}
+
+model ErpRecipe {
+  id          Int      @id @default(autoincrement())
+  code        String   @unique @db.Text
+  name        String   @db.Text
+  bomUnits    Decimal  @default(1) @map("bom_units") @db.Decimal(12, 3)
+  description String   @default("") @db.Text
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("erp_recipes")
+}
+
+model ErpRoute {
+  id              Int      @id @default(autoincrement())
+  code            String   @unique @db.Text
+  name            String   @db.Text
+  operations      String   @default("") @db.Text
+  durationMinutes Int      @default(0) @map("duration_minutes")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("erp_routes")
+}
+
+model ErpWarehouse {
+  id            Int      @id @default(autoincrement())
+  code          String   @unique @db.Text
+  name          String   @db.Text
+  warehouseType String   @map("warehouse_type") @db.Text
+  location      String   @default("") @db.Text
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("erp_warehouses")
+}
+
+model ErpSupplier {
+  id             Int      @id @default(autoincrement())
+  name           String   @db.Text
+  lastName       String   @default("") @map("last_name") @db.Text
+  identityNumber String   @default("") @map("identity_number") @db.Text
+  phone          String   @default("") @db.Text
+  email          String   @default("") @db.Text
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("erp_suppliers")
+}
+
+model ErpCustomer {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.Text
+  phone     String   @default("") @db.Text
+  address   String   @default("") @db.Text
+  email     String   @default("") @db.Text
+  code      String   @unique @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("erp_customers")
+}
+
+model ErpInventoryMovement {
+  id            Int      @id @default(autoincrement())
+  movementType  String   @map("movement_type") @db.Text
+  productId     Int?     @map("product_id")
+  rawMaterialId Int?     @map("raw_material_id")
+  quantity      Decimal  @db.Decimal(12, 3)
+  reference     String   @default("") @db.Text
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("erp_inventory_movements")
+}
+
+model ErpProductionOrder {
+  id           Int      @id @default(autoincrement())
+  orderNumber  String   @unique @map("order_number") @db.Text
+  productId    Int      @map("product_id")
+  plannedUnits Int      @map("planned_units")
+  status       String   @default("Pendiente") @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("erp_production_orders")
+}
+
+model ErpUser {
+  id           Int      @id @default(autoincrement())
+  fullName     String   @map("full_name") @db.Text
+  username     String   @unique @db.Text
+  code         String   @unique @db.Text
+  phone        String   @default("") @db.Text
+  email        String   @unique @db.Text
+  role         String   @default("usuario") @db.Text
+  passwordHash String   @map("password_hash") @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("erp_users")
+}
