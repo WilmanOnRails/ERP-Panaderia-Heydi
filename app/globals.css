@@ -28,6 +28,13 @@ body { background: var(--cream); color: var(--ink); font-family: Arial, Helvetic
 .password-field input { padding-right: 78px; }
 .password-toggle { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); border: 0; background: transparent; color: #f9a8d4; cursor: pointer; font-size: .75rem; }
 .login-submit { margin-top: 14px; border: 0; border-radius: 10px; padding: 14px; background: linear-gradient(135deg, #ec4899, #8b5cf6); color: #fff; font-weight: 800; cursor: pointer; }
+.login-submit:disabled { opacity: .65; cursor: wait; }
+.login-error { margin: 4px 0; color: #fecaca; font-size: .85rem; line-height: 1.4; }
+.session-controls { position: fixed; z-index: 20; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: 0 8px 24px #3f2d2530; font-size: 12px; }
+.session-controls > span { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logout-button { border: 0; border-radius: 8px; padding: 9px 12px; background: var(--chocolate); color: #fff; cursor: pointer; font-size: 12px; font-weight: 700; }
+.logout-button:disabled { opacity: .65; cursor: wait; }
+.logout-error { position: absolute; right: 0; bottom: calc(100% + 8px); width: 220px; padding: 9px; border-radius: 8px; background: #7f1d1d; color: #fff; }
 .login-demo-note { margin-top: 22px; font-size: .78rem; }
 @media (max-width: 760px) { .login-page { padding: 14px; } .login-card { grid-template-columns: 1fr; } .login-visual { min-height: 260px; } .login-form-panel { padding: 34px 26px 40px; } }
 button { font: inherit; }
