@@ -447,7 +447,7 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
       <div className="sidebar-bottom"><div className="user-card"><div className="avatar">MS</div><div><strong>María Solís</strong><small>Administradora</small></div></div></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><button className="icon-button menu-trigger" aria-label="Abrir menú"><Menu /></button><div className="breadcrumbs"><span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Buscar"><Search /></button><button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button><div className="top-avatar">MS</div></div></header>
+      <header className="topbar"><button className="icon-button menu-trigger" aria-label="Abrir menú"><Menu /></button><div className="breadcrumbs"><span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button><div className="top-avatar">MS</div></div></header>
       <div className="content-wrap">{notice && <div className="toast-message"><CheckCircle2 />{notice}</div>}{page()}</div>
       <footer className="footer"><span>© 2024 Repostería Heydi</span><span>v1.0.0 · Managua, Nicaragua</span></footer>
     </main>
