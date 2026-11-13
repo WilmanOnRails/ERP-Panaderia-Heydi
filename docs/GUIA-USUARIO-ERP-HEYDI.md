@@ -11,7 +11,7 @@ Al presionar el botón, el sistema dirige a la vista principal del ERP, donde se
 
 El dashboard es el resumen general de la operación. Muestra:
 
-- Ventas del día.
+- Cantidad de ventas y despachos registrados e ingresos acumulados por venta.
 - Órdenes de producción activas.
 - Productos con stock bajo.
 - Producción pendiente.
@@ -28,6 +28,7 @@ El menú lateral agrupa las funciones por áreas:
 - **Datos maestros:** productos, materias primas, recetas/BOM, rutas, almacenes, proveedores y clientes.
 - **Facturación:** cotizaciones, facturas, pagos, devoluciones y notas de crédito.
 - **Inventario:** existencias, entradas, salidas y movimientos.
+- **Ventas:** consulta de ingresos derivados de las ventas registradas.
 - **Producción:** órdenes de producción, disponibilidad de materiales, consumo de materias primas y productos terminados.
 - **Reportes:** reportes de gestión.
 - **Administración:** usuarios y roles.
@@ -199,12 +200,16 @@ Al guardar una entrada se incrementa la existencia relacionada.
 
 ### Salidas
 
-Permite registrar mercancía que sale del inventario, por ejemplo:
+Permite registrar una venta o un despacho de producto terminado:
 
-- Consumo de materias primas.
-- Venta o despacho.
-- Merma.
-- Ajuste negativo.
+- La venta requiere cliente, productos y precios; valida las existencias, descuenta el producto terminado y queda disponible en **Ingresos por venta**.
+- El despacho también descuenta existencias y se registra en movimientos, pero no se contabiliza como ingreso.
+
+### Ingresos por venta
+
+Resume los ingresos brutos de documentos de tipo **Venta**. Permite consultar todo el historial, las ventas de hoy o las del mes actual; muestra totales por cliente y producto, el ticket promedio y el detalle de cada documento. El botón **Exportar CSV** descarga las ventas del periodo seleccionado.
+
+Los ingresos se calculan desde las ventas registradas en **Salidas**, de modo que no se duplica ni se vuelve a capturar la información. Los mismos documentos alimentan el dashboard y los reportes de gestión. Los datos operativos de estos módulos se guardan en el almacenamiento local del navegador.
 
 Al guardar una salida se descuenta la cantidad correspondiente.
 
