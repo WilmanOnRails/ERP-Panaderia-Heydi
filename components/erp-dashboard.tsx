@@ -1,17 +1,18 @@
 'use client'
-
-import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
-import { Archive, Bell, Boxes, ChevronDown, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download, CircleDollarSign } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent, ReactNode } from 'react'
+import { Archive, Bell, Boxes, ChevronDown, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download, FileText, CreditCard, Receipt } from 'lucide-react'
+import { BillingModule } from '@/components/billing-module'
+import type { BillingData } from '@/components/billing-module'
 
 type OrderStatus = 'Pendiente' | 'En proceso' | 'Finalizada' | 'Cancelada'
-type RecordItem = { id: string; name: string; code?: string; detail: string; status: 'Activo' | 'Inactivo'; data?: Record<string, string> }
+type RecordItem = { id: string; name: string; code?: string; detail: string; status: string; data?: Record<string, string> }
 type Order = { id: string; product: string; qty: number; produced: number; date: string; status: OrderStatus; startedAt?: string; finishedAt?: string; minutes?: number; cost?: number }
 type Material = { id: string; name: string; code: string; unit: string; stock: number; cost: number }
 type QcAction = 'Liberación' | 'Retrabajo' | 'Retorno retrabajo' | 'Scrap'
 type QcBuckets = { pending: number; rework: number }
 type QcRecord = { id: string; date: string; product: string; action: QcAction; qty: number; from: string; reason: string; value: number }
-type MovementType = 'Entrada' | 'Consumo' | 'Producción' | 'Venta' | 'Despacho' | QcAction
+type MovementType = 'Entrada' | 'Consumo' | 'Producción' | 'Venta' | 'Despacho' | 'Devolución' | QcAction
 type Movement = { id: number; date: string; type: MovementType; code: string; material: string; qty: number; unit: string; total: number; ref: string }
 type PurchaseStatus = 'Pendiente' | 'Recibida parcial' | 'Recibida' | 'Cancelada'
 type PurchaseLine = { code: string; qty: number; cost: number; received: number }
@@ -22,6 +23,7 @@ type Field = { key: string; label: string; type?: string; required?: boolean }
 
 // ---------- Utilidades ----------
 const now = () => new Date().toLocaleString('es-NI')
+const userInitials = (name: string) => name.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toLocaleUpperCase() ?? '').join('')
 const num = (value: number, decimals = 2) => value.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 const money = (value: number) => `C$ ${num(value)}`
 const pct = (value: number) => `${num(value * 100, 1)}%`
@@ -71,11 +73,12 @@ const groups = [
   { label: 'Panel principal', items: [['Dashboard', LayoutDashboard]] },
   { label: 'Datos maestros', items: [['Productos', Package], ['Materias primas', ShoppingBasket], ['BOM / Recetas', ClipboardList], ['Rutas de producción', Factory], ['Almacenes', Archive], ['Proveedores', Truck], ['Clientes', Users]] },
   { label: 'Compras', items: [['Órdenes de compra', ClipboardList], ['Recepción de material', Truck]] },
+  { label: 'Facturación', items: [['Cotizaciones', FileText], ['Facturación', Receipt], ['Registro de pagos', CreditCard], ['Devoluciones y notas de crédito', ClipboardList]] },
   { label: 'Inventario', items: [['Existencias', Boxes], ['Entradas', Plus], ['Salidas', Package], ['Movimientos', ClipboardList]] },
   { label: 'Ventas', items: [['Ingresos por venta', CircleDollarSign]] },
   { label: 'Producción', items: [['Órdenes de producción', Factory], ['Disponibilidad de materiales', Boxes], ['Consumo de materias primas', ShoppingBasket], ['Seguimiento de operaciones', ClipboardList], ['Productos terminados', Package], ['Calidad y liberación', CheckCircle2]] },
   { label: 'Reportes', items: [['Reportes de gestión', ClipboardList]] },
-  { label: 'Administración', items: [['Usuarios y roles', Users], ['Configuración', ClipboardList]] },
+  { label: 'Administración', items: [['Usuarios y roles', Users], ['Mi cuenta', Users], ['Configuración', ClipboardList]] },
 ]
 
 const materialFields: Field[] = [{ key: 'name', label: 'Nombre de materia prima', required: true }, { key: 'code', label: 'Código', required: true }, { key: 'unit', label: 'Unidad de medida (lb, kg, unidad...)', required: true }]
@@ -104,26 +107,124 @@ const initial: Record<string, RecordItem[]> = {
 const initialMaterials: Material[] = [{ id: 'MP-101', name: 'Harina especial', code: 'MP-101', unit: 'lb', stock: 4.5, cost: 0 }]
 const initialOrders: Order[] = [{ id: 'OP-2024-0018', product: 'Gemelos', qty: 80, produced: 40, date: 'Hoy, 08:30', status: 'En proceso' }, { id: 'OP-2024-0015', product: 'Gemelos', qty: 80, produced: 0, date: '28 Oct, 10:20', status: 'Pendiente' }]
 
-function Badge({ status }: { status: string }) { return <span className={`status-badge ${status === 'Activo' || status === 'Finalizada' || status === 'Recibida' ? 'success' : status === 'En proceso' || status === 'Recibida parcial' ? 'progress' : 'warning'}`}><span className="status-dot" />{status}</span> }
+function Badge({ status }: { status: string }) { const label = status === 'approved' ? 'Aprobado' : status === 'pending' ? 'Pendiente de aprobación' : status === 'rejected' ? 'Rechazado' : status; return <span className={`status-badge ${status === 'Activo' || status === 'Finalizada' || status === 'Recibida' || status === 'approved' ? 'success' : status === 'En proceso' || status === 'Recibida parcial' ? 'progress' : 'warning'}`}><span className="status-dot" />{label}</span> }
 
 function Head({ eyebrow, title, subtitle, children }: { eyebrow: string; title: string; subtitle: string; children?: ReactNode }) { return <section className="page-heading"><div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1><p className="subtitle">{subtitle}</p></div>{children}</section> }
 function Table({ head, rows, empty = 'No hay registros para mostrar.' }: { head: string[]; rows: (string | number)[][]; empty?: string }) { return <section className="panel module-panel">{rows.length ? <div className="table-scroll"><table><thead><tr>{head.map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i}>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>)}</tbody></table></div> : <div className="empty-state"><AlertTriangle />{empty}</div>}</section> }
 
-export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
+export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }: { currentUser: { id: number; fullName: string; username: string; email: string; phone: string; role: string }; isAdmin: boolean; logoutButton: ReactNode }) {
+  const [currentUser, setCurrentUser] = useState(initialUser)
   const [active, setActive] = useState('Dashboard'); const [records, setRecords] = useState(initial); const [orders, setOrders] = useState(initialOrders); const [materials, setMaterials] = useState(initialMaterials); const [movements, setMovements] = useState<Movement[]>([]); const [search, setSearch] = useState(''); const [notice, setNotice] = useState(''); const [modal, setModal] = useState<{ module: string; item?: RecordItem } | null>(null); const [detail, setDetail] = useState<RecordItem | null>(null); const [finalizing, setFinalizing] = useState<Order | null>(null); const [form, setForm] = useState<Record<string, string>>({}); const [loaded, setLoaded] = useState(false)
   const [expandedGroup, setExpandedGroup] = useState('Panel principal')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [purchases, setPurchases] = useState<Purchase[]>([]); const [sales, setSales] = useState<Sale[]>([]); const [productStock, setProductStock] = useState<Record<string, number>>({}); const [purchaseDraft, setPurchaseDraft] = useState<{ code: string; qty: number }[] | null>(null)
   const [qc, setQc] = useState<Record<string, QcBuckets>>({}); const [qcRequired, setQcRequired] = useState<Record<string, boolean>>({}); const [qcLog, setQcLog] = useState<QcRecord[]>([])
-  // Persistencia: los datos se guardan en el navegador (localStorage) y sobreviven a recargas de la página
+  const [billing, setBilling] = useState<BillingData>({ quotes: [], invoices: [], payments: [], creditNotes: [] })
+  const [workspaceError, setWorkspaceError] = useState('')
+  const workspaceVersion = useRef(0)
+  const saveQueue = useRef(Promise.resolve())
   useEffect(() => {
-    try { const raw = window.localStorage.getItem('erp-heydi-datos'); if (raw) { const saved = JSON.parse(raw); if (saved.records) { const { 'Usuarios y roles': _users, ...savedRecords } = saved.records; setRecords(savedRecords) } if (saved.orders) setOrders(saved.orders); if (saved.materials) setMaterials(saved.materials); if (saved.movements) setMovements(saved.movements); if (saved.purchases) setPurchases(saved.purchases); if (saved.sales) setSales(saved.sales); if (saved.productStock) setProductStock(saved.productStock); if (saved.qc) setQc(saved.qc); if (saved.qcRequired) setQcRequired(saved.qcRequired); if (saved.qcLog) setQcLog(saved.qcLog) } } catch { }
-    setLoaded(true)
+    let cancelled = false
+    void (async () => {
+      const response = await fetch('/api/workspace', { cache: 'no-store' })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error?.message ?? 'No se pudieron cargar los datos del ERP.')
+      if (cancelled) return
+      let saved = result.data && typeof result.data === 'object' && !Array.isArray(result.data) ? result.data as Record<string, unknown> : {}
+      let version = Number.isSafeInteger(result.version) ? result.version : 0
+      if (version === 0 && Object.keys(saved).length === 0) {
+        let legacyData: string | null = null
+        let legacyBilling: string | null = null
+        try {
+          legacyData = window.localStorage.getItem('erp-heydi-datos')
+          legacyBilling = window.localStorage.getItem('erp-heydi-facturacion')
+        } catch {
+          // Browser storage may be disabled; the server workspace remains the source of truth.
+        }
+        if (legacyData || legacyBilling) {
+          const legacy = legacyData ? JSON.parse(legacyData) as Record<string, unknown> : {}
+          const legacyBillingData = legacyBilling ? JSON.parse(legacyBilling) as Partial<BillingData> : {}
+          const legacyRecords = legacy.records && typeof legacy.records === 'object' && !Array.isArray(legacy.records)
+            ? legacy.records as Record<string, unknown>
+            : {}
+          const { 'Usuarios y roles': _users, ...savedRecords } = legacyRecords as Record<string, RecordItem[]>
+          saved = {
+            ...legacy,
+            records: savedRecords,
+            billing: {
+              quotes: Array.isArray(legacyBillingData.quotes) ? legacyBillingData.quotes : [],
+              invoices: Array.isArray(legacyBillingData.invoices) ? legacyBillingData.invoices : [],
+              payments: Array.isArray(legacyBillingData.payments) ? legacyBillingData.payments : [],
+              creditNotes: Array.isArray(legacyBillingData.creditNotes) ? legacyBillingData.creditNotes : [],
+            },
+          }
+          const migrationResponse = await fetch('/api/workspace', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ version, data: saved }),
+          })
+          const migrationResult = await migrationResponse.json()
+          if (!migrationResponse.ok) throw new Error(migrationResult.error?.message ?? 'No se pudieron migrar los datos guardados en este navegador.')
+          version = migrationResult.version
+          try {
+            window.localStorage.removeItem('erp-heydi-datos')
+            window.localStorage.removeItem('erp-heydi-facturacion')
+          } catch {
+            setNotice('Los datos se sincronizaron con el servidor, pero no se pudo borrar la copia local antigua.')
+          }
+        }
+      }
+      workspaceVersion.current = version
+      if (saved.records && typeof saved.records === 'object' && !Array.isArray(saved.records)) {
+        const { 'Usuarios y roles': _users, ...savedRecords } = saved.records as Record<string, RecordItem[]>
+        setRecords(savedRecords)
+      }
+      if (Array.isArray(saved.orders)) setOrders(saved.orders as Order[])
+      if (Array.isArray(saved.materials)) setMaterials(saved.materials as Material[])
+      if (Array.isArray(saved.movements)) setMovements(saved.movements as Movement[])
+      if (Array.isArray(saved.purchases)) setPurchases(saved.purchases as Purchase[])
+      if (Array.isArray(saved.sales)) setSales(saved.sales as Sale[])
+      if (saved.productStock && typeof saved.productStock === 'object' && !Array.isArray(saved.productStock)) setProductStock(saved.productStock as Record<string, number>)
+      if (saved.qc && typeof saved.qc === 'object' && !Array.isArray(saved.qc)) setQc(saved.qc as Record<string, QcBuckets>)
+      if (saved.qcRequired && typeof saved.qcRequired === 'object' && !Array.isArray(saved.qcRequired)) setQcRequired(saved.qcRequired as Record<string, boolean>)
+      if (Array.isArray(saved.qcLog)) setQcLog(saved.qcLog as QcRecord[])
+      if (saved.billing && typeof saved.billing === 'object' && !Array.isArray(saved.billing)) {
+        const billingData = saved.billing as Partial<BillingData>
+        setBilling({
+          quotes: Array.isArray(billingData.quotes) ? billingData.quotes : [],
+          invoices: Array.isArray(billingData.invoices) ? billingData.invoices : [],
+          payments: Array.isArray(billingData.payments) ? billingData.payments : [],
+          creditNotes: Array.isArray(billingData.creditNotes) ? billingData.creditNotes : [],
+        })
+      }
+      setLoaded(true)
+    })().catch((error: unknown) => {
+      if (!cancelled) setWorkspaceError(error instanceof Error ? error.message : 'No se pudieron cargar los datos del ERP.')
+    })
+    return () => { cancelled = true }
   }, [])
-  useEffect(() => { if (!loaded) return; const { 'Usuarios y roles': _users, ...savedRecords } = records; try { window.localStorage.setItem('erp-heydi-datos', JSON.stringify({ records: savedRecords, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog })) } catch { } }, [loaded, records, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog])
-  const resetAll = () => { if (!window.confirm('Se borrarán todos los datos registrados y volverán los datos iniciales. ¿Continuar?')) return; setRecords(initial); setOrders(initialOrders); setMaterials(initialMaterials); setMovements([]); setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([]); notify('Datos restablecidos') }
+  useEffect(() => {
+    if (!loaded || workspaceError) return
+    const { 'Usuarios y roles': _users, ...savedRecords } = records
+    const data = { records: savedRecords, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog, billing }
+    saveQueue.current = saveQueue.current.then(async () => {
+      const response = await fetch('/api/workspace', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: workspaceVersion.current, data }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error?.message ?? 'No se pudieron guardar los datos del ERP.')
+      workspaceVersion.current = result.version
+    }).catch((error: unknown) => {
+      setWorkspaceError(error instanceof Error ? error.message : 'No se pudieron guardar los datos del ERP.')
+    })
+  }, [loaded, workspaceError, records, orders, materials, movements, purchases, sales, productStock, qc, qcRequired, qcLog, billing])
+  const resetAll = () => { if (!window.confirm('Se borrarán todos los datos registrados y volverán los datos iniciales. ¿Continuar?')) return; setRecords(initial); setOrders(initialOrders); setMaterials(initialMaterials); setMovements([]); setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([]); setBilling({ quotes: [], invoices: [], payments: [], creditNotes: [] }); notify('Datos restablecidos') }
   const selectPage = (label: string) => {
     setActive(label)
     setSearch('')
+    setSidebarOpen(false)
     const group = groups.find(({ items }) => items.some(([item]) => item === label))
     if (group) setExpandedGroup(group.label)
   }
@@ -134,34 +235,54 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
     const demo = [['MP-101', 'Harina especial', 'lb', 30, 22, 'Factura 001'], ['MP-102', 'Azúcar blanca', 'lb', 8, 20, 'Factura 001'], ['MP-103', 'Margarina', 'lb', 8, 55, 'Factura 002'], ['MP-104', 'Huevos', 'unidad', 60, 6, 'Factura 002'], ['MP-105', 'Levadura', 'lb', 1.5, 90, 'Factura 003']] as const
     setMaterials(demo.map(([code, name, unit, qty, cost]) => ({ id: code, name, code, unit, stock: code === 'MP-101' ? qty + 4.5 : qty, cost })))
     setMovements(demo.map(([code, name, unit, qty, cost, ref], i) => ({ id: Date.now() + i, date: stamp, type: 'Entrada' as const, code, material: name, qty, unit, total: qty * cost, ref })).reverse())
-    setRecords({ ...initial, 'BOM / Recetas': initial['BOM / Recetas'].map((r) => ({ ...r, data: { ...r.data!, ingredients: 'MP-101=12\nMP-102=3\nMP-103=3\nMP-104=24\nMP-105=0.5' } })) })
+    const sampleProducts = [
+      { id: 'P-001', name: 'Gemelos', code: 'GEM-000', breadType: 'Repostería', units: '80', price: '180' },
+      { id: 'P-002', name: 'Pan francés', code: 'PAN-001', breadType: 'Pan tradicional', units: '100', price: '10' },
+      { id: 'P-003', name: 'Pan dulce', code: 'PAN-002', breadType: 'Pan dulce', units: '60', price: '15' },
+      { id: 'P-004', name: 'Concha de vainilla', code: 'REP-001', breadType: 'Repostería', units: '48', price: '25' },
+      { id: 'P-005', name: 'Croissant', code: 'REP-002', breadType: 'Repostería', units: '36', price: '35' },
+      { id: 'P-006', name: 'Queque de vainilla', code: 'REP-003', breadType: 'Queques', units: '12', price: '350' },
+    ].map(({ id, name, code, breadType, units, price }) => ({
+      id,
+      name,
+      code,
+      detail: `${breadType} · ${units} und/lote · C$ ${price}`,
+      status: 'Activo',
+      data: { name, code, breadType, units, price },
+    }))
+    setRecords({ ...initial, Productos: sampleProducts, 'BOM / Recetas': initial['BOM / Recetas'].map((r) => ({ ...r, data: { ...r.data!, ingredients: 'MP-101=12\nMP-102=3\nMP-103=3\nMP-104=24\nMP-105=0.5' } })) })
     setOrders(initialOrders)
-    setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([])
-    notify('Datos de ejemplo cargados: ahora finaliza las dos órdenes')
+    setPurchases([]); setSales([]); setProductStock({}); setQc({}); setQcRequired({}); setQcLog([]); setBilling({ quotes: [], invoices: [], payments: [], creditNotes: [] })
+    notify('Datos de ejemplo cargados: 6 productos y materias primas. Ahora finaliza las dos órdenes')
   }
   const notify = (message: string) => { setNotice(message); window.setTimeout(() => setNotice(''), 4000) }
   useEffect(() => {
     if (!loaded || !isAdmin || active !== 'Usuarios y roles') return
     let cancelled = false
-    fetch('/api/users?limit=100', { cache: 'no-store' })
-      .then(async (response) => {
+    void (async () => {
+      const users: { id: number; fullName: string; username: string; code: string; phone: string; email: string; role: string; status: string }[] = []
+      let page = 1
+      let hasMore = true
+      while (hasMore && !cancelled) {
+        const response = await fetch(`/api/users?page=${page}&limit=100`, { cache: 'no-store' })
         const result = await response.json()
         if (!response.ok) throw new Error(result.error?.message ?? 'No se pudieron cargar los usuarios.')
-        return result.data as { id: number; fullName: string; username: string; code: string; phone: string; email: string; role: string }[]
-      })
-      .then((users) => {
-        if (cancelled) return
+        users.push(...result.data)
+        hasMore = result.pagination.hasMore
+        page += 1
+      }
+      if (!cancelled) {
         const userRecords: RecordItem[] = users.map((user) => ({
           id: String(user.id),
           name: user.fullName,
           code: user.code,
           detail: `${user.username} · ${user.email} · ${user.phone || 'Sin teléfono'} · ${user.role}`,
-          status: 'Activo',
-          data: { name: user.fullName, username: user.username, code: user.code, phone: user.phone, email: user.email, role: user.role },
+          status: user.status,
+          data: { name: user.fullName, username: user.username, code: user.code, phone: user.phone, email: user.email, role: user.role, status: user.status },
         }))
         setRecords((current) => ({ ...current, 'Usuarios y roles': userRecords }))
-      })
-      .catch((error: unknown) => { if (!cancelled) notify(error instanceof Error ? error.message : 'No se pudieron cargar los usuarios.') })
+      }
+    })().catch((error: unknown) => { if (!cancelled) notify(error instanceof Error ? error.message : 'No se pudieron cargar los usuarios.') })
     return () => { cancelled = true }
   }, [active, isAdmin, loaded])
   const moduleFields = fields[active] ?? []
@@ -214,8 +335,8 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
           name: user.fullName,
           code: user.code,
           detail: `${user.username} · ${user.email} · ${user.phone || 'Sin teléfono'} · ${user.role}`,
-          status: 'Activo',
-          data: { name: user.fullName, username: user.username, code: user.code, phone: user.phone, email: user.email, role: user.role },
+          status: user.status,
+          data: { name: user.fullName, username: user.username, code: user.code, phone: user.phone, email: user.email, role: user.role, status: user.status },
         }
         setRecords((current) => ({
           ...current,
@@ -257,6 +378,32 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
     notify(`${modal.item ? 'Registro actualizado' : 'Registro creado'} en ${modal.module}`)
   }
   const remove = (module: string, id: string) => { setRecords((current) => ({ ...current, [module]: current[module].filter((row) => row.id !== id) })); notify('Registro eliminado del catálogo') }
+  const updateRegistrationStatus = async (id: string, status: 'approved' | 'rejected') => {
+    try {
+      const response = await fetch(`/api/users/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error?.message ?? 'No se pudo actualizar la solicitud.')
+      const user = result.data
+      setRecords((current) => ({
+        ...current,
+        'Usuarios y roles': (current['Usuarios y roles'] ?? []).map((item) => item.id === id
+          ? {
+            ...item,
+            status: user.status,
+            detail: `${user.username} · ${user.email} · ${user.phone || 'Sin teléfono'} · ${user.role}`,
+            data: { ...(item.data ?? {}), status: user.status, role: user.role },
+          }
+          : item),
+      }))
+      notify(status === 'approved' ? 'Cuenta aprobada; ya puede iniciar sesión' : 'Solicitud rechazada')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'No se pudo actualizar la solicitud.')
+    }
+  }
   const removeUser = async (id: string) => {
     if (!window.confirm('¿Eliminar este usuario? Ya no podrá iniciar sesión.')) return
     try {
@@ -269,6 +416,23 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
       notify('Usuario eliminado')
     } catch (error) {
       notify(error instanceof Error ? error.message : 'No se pudo eliminar el usuario.')
+    }
+  }
+  const saveProfile = async (updates: { fullName: string; username: string; email: string; phone: string; currentPassword: string; newPassword?: string }) => {
+    try {
+      const response = await fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error?.message ?? 'No se pudo actualizar tu cuenta.')
+      setCurrentUser((user) => ({ ...user, fullName: result.data.fullName, username: result.data.username, email: result.data.email, phone: result.data.phone }))
+      notify('Tu cuenta se actualizó correctamente')
+      return true
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'No se pudo actualizar tu cuenta.')
+      return false
     }
   }
   const removeMaterial = (id: string) => { setMaterials((current) => current.filter((m) => m.id !== id)); notify('Materia prima eliminada') }
@@ -367,6 +531,44 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
     return true
   }
 
+  const applyBillingInventory = (lines: { product: string; qty: number; price: number }[], reference: string, direction: 'sale' | 'return') => {
+    if (!lines.length || lines.some((line) => !line.product || !(line.qty > 0) || !Number.isFinite(line.price) || line.price < 0)) {
+      notify('Las líneas del documento de facturación no son válidas')
+      return false
+    }
+    const quantities: Record<string, number> = {}
+    lines.forEach((line) => { quantities[line.product] = (quantities[line.product] ?? 0) + line.qty })
+    if (direction === 'sale') {
+      const lacking = Object.keys(quantities).find((name) => (productStock[name] ?? 0) < quantities[name])
+      if (lacking) {
+        notify(`Stock insuficiente de ${lacking}: hay ${num(productStock[lacking] ?? 0, 0)} und y la factura requiere ${num(quantities[lacking], 0)}.`)
+        return false
+      }
+    }
+    const stamp = now()
+    const movementType = direction === 'sale' ? 'Venta' : 'Devolución'
+    const movementsToAdd: Movement[] = lines.map((line, index) => ({
+      id: Date.now() + index,
+      date: stamp,
+      type: movementType,
+      code: productInfo(records, line.product).code,
+      material: line.product,
+      qty: line.qty,
+      unit: 'und',
+      total: line.qty * line.price,
+      ref: reference,
+    }))
+    setProductStock((current) => {
+      const next = { ...current }
+      Object.entries(quantities).forEach(([name, qty]) => {
+        next[name] = (next[name] ?? 0) + (direction === 'sale' ? -qty : qty)
+      })
+      return next
+    })
+    setMovements((current) => [...movementsToAdd.reverse(), ...current])
+    return true
+  }
+
   // Finalizar orden: descuenta insumos segun la receta, suma el producto terminado al inventario y registra los movimientos
   const finalizeOrder = (order: Order, produced: number, minutes: number) => {
     const { product, lines, needs } = getNeeds(order, records, materials)
@@ -427,6 +629,11 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
       case 'Recepción de material': return <ReceptionPage purchases={purchases} materials={materials} movements={movements} onReceive={receivePurchase} />
       case 'Salidas': return <SalesPage sales={sales} customers={(records.Clientes ?? []).map((c) => c.name)} products={productNames.map((name) => ({ name, price: productInfo(records, name).price }))} stock={productStock} onCreate={createSale} onViewRevenue={() => nav('Ingresos por venta')} />
       case 'Ingresos por venta': return <RevenuePage sales={sales} />
+      case 'Cotizaciones':
+      case 'Facturación':
+      case 'Registro de pagos':
+      case 'Devoluciones y notas de crédito':
+        return <BillingModule section={active} customers={(records.Clientes ?? []).map((customer) => customer.name)} products={productNames.map((name) => ({ name, code: productInfo(records, name).code, price: productInfo(records, name).price }))} stock={productStock} data={billing} onDataChange={setBilling} onInventoryChange={applyBillingInventory} onNotice={notify} />
       case 'Calidad y liberación': return <QualityPage products={Array.from(new Set([...productNames, ...Object.keys(productStock), ...Object.keys(qc)]))} qc={qc} stock={productStock} required={qcRequired} log={qcLog} onToggle={(name) => setQcRequired((current) => ({ ...current, [name]: !current[name] }))} onAction={qcAction} />
       case 'Materias primas': return <><Head eyebrow="Módulo operativo" title="Materias primas" subtitle="Catálogo de insumos. El stock y el costo se actualizan con las Entradas."><button className="primary-button" onClick={() => openModal('Materias primas')}><Plus />Nuevo registro</button></Head><section className="panel module-panel">{materials.length ? <div className="table-scroll"><table><thead><tr><th>Código</th><th>Nombre</th><th>Unidad</th><th>Stock</th><th>Costo promedio</th><th>Acciones</th></tr></thead><tbody>{materials.map((m) => <tr key={m.id}><td>{m.code}</td><td>{m.name}</td><td>{m.unit}</td><td>{num(m.stock)}</td><td>{money(m.cost)}</td><td className="row-actions"><button className="icon-button" aria-label={`Editar ${m.name}`} onClick={() => editMaterial(m)}><Edit3 /></button><button className="icon-button danger" aria-label={`Eliminar ${m.name}`} onClick={() => removeMaterial(m.id)}><Trash2 /></button></td></tr>)}</tbody></table></div> : <div className="empty-state"><AlertTriangle />No hay registros para mostrar.</div>}</section></>
       case 'Existencias': return <><Head eyebrow="Inventario" title="Existencias" subtitle="Stock actual y valor del inventario de materias primas y de producto terminado." /><Table head={['Código', 'Materia prima', 'Stock', 'Costo promedio', 'Valor']} rows={[...materials.map((m) => [m.code, m.name, `${num(m.stock)} ${m.unit}`, money(m.cost), money(m.stock * m.cost)]), ...(materials.length ? [['', 'TOTAL', '', '', money(sum(materials.map((m) => m.stock * m.cost)))]] : [])]} /><section className="panel module-panel"><div className="panel-heading"><div><h2>Producto terminado</h2><p>Unidades disponibles para venta o despacho.</p></div></div></section><Table head={['Producto', 'Disponible (liberado)', 'Pendiente de liberación', 'En retrabajo']} rows={finishedRows} empty="Aún no hay producto terminado: finaliza una orden de producción." /></>
@@ -436,32 +643,64 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
       case 'Seguimiento de operaciones': return <><Head eyebrow="Producción" title="Seguimiento de operaciones" subtitle="Inicio, fin y tiempo real de cada orden." /><Table head={['Orden', 'Producto', 'Estado', 'Inicio', 'Fin', 'Tiempo real (min)']} rows={orders.map((o) => [o.id, o.product, o.status, o.startedAt ?? '—', o.finishedAt ?? '—', o.minutes ?? '—'])} /></>
       case 'Productos terminados': return <><Head eyebrow="Producción" title="Productos terminados" subtitle="Stock disponible y unidades producidas por orden finalizada." /><Table head={['Producto', 'Disponible (liberado)', 'Pendiente de liberación', 'En retrabajo']} rows={finishedRows} empty="Aún no hay producto terminado." /><Table head={['Orden', 'Producto', 'Planificado', 'Producido', 'Yield', 'Fecha de fin']} rows={orders.filter((o) => o.status === 'Finalizada').map((o) => [o.id, o.product, `${o.qty} und`, `${o.produced} und`, o.qty ? pct(o.produced / o.qty) : '—', o.finishedAt ?? '—'])} empty="Aún no hay órdenes finalizadas." /></>
       case 'Reportes de gestión': return <ReportsPage orders={orders} materials={materials} qcLog={qcLog} sales={sales} />
+      case 'Usuarios y roles': return <UsersPage currentUserId={String(currentUser.id)} items={visible} search={search} setSearch={setSearch} onNew={() => openModal('Usuarios y roles')} onEdit={(item) => openModal('Usuarios y roles', item)} onDelete={removeUser} onSelect={setDetail} onUpdateStatus={updateRegistrationStatus} />
+      case 'Mi cuenta': return <ProfilePage user={currentUser} onSave={saveProfile} />
       default: return <ModulePage title={active} items={visible} search={search} setSearch={setSearch} onNew={() => fields[active] ? openModal(active) : notify('Módulo informativo listo para operar')} onEdit={(item) => openModal(active, item)} onDelete={(id) => active === 'Usuarios y roles' ? removeUser(id) : remove(active, id)} onSelect={setDetail} />
     }
   }
   return <div className="erp-shell">
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><span>H</span></div><div><strong>Repostería Heydi</strong><small>SISTEMA ERP DE PRODUCCIÓN</small></div></div>
+    <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''}`} id="erp-sidebar">
+      <div className="brand"><div className="brand-mark"><span>H</span></div><div><strong>Repostería Heydi</strong><small>SISTEMA ERP DE PRODUCCIÓN</small></div><button type="button" className="icon-button mobile-close" aria-label="Cerrar menú" onClick={() => setSidebarOpen(false)}><X /></button></div>
       <nav aria-label="Navegación principal">
         {groups.map((group, index) => {
           const isExpanded = expandedGroup === group.label
           const itemsId = `nav-items-${index}`
+          const visibleItems = group.items.filter(([label]) => (isAdmin || label !== 'Usuarios y roles') && (!isAdmin || label !== 'Mi cuenta'))
+          if (!visibleItems.length) return null
           return <div className="nav-group" key={group.label}>
             <button type="button" className="nav-label" aria-expanded={isExpanded} aria-controls={itemsId} onClick={() => setExpandedGroup(isExpanded ? '' : group.label)}>
               <span>{group.label}</span>
               <ChevronDown className="nav-chevron" aria-hidden="true" />
             </button>
             <div className="nav-items" id={itemsId} hidden={!isExpanded}>
-              {group.items.map(([label, Icon]) => <button className={`nav-item ${active === label ? 'active' : ''}`} key={label as string} onClick={() => nav(label as string)}><Icon /><span>{label as string}</span></button>)}
+              {visibleItems.map(([label, Icon]) => <button className={`nav-item ${active === label ? 'active' : ''}`} key={label as string} onClick={() => nav(label as string)}><Icon /><span>{label as string}</span></button>)}
             </div>
           </div>
         })}
       </nav>
-      <div className="sidebar-bottom"><div className="user-card"><div className="avatar">MS</div><div><strong>María Solís</strong><small>Administradora</small></div></div></div>
+      <div className="sidebar-bottom"><div className="user-card"><div className="avatar">{userInitials(currentUser.fullName)}</div><div><strong>{currentUser.fullName}</strong><small>{currentUser.role === 'administrador' ? 'Administrador' : 'Usuario'} · {currentUser.username}</small></div></div></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><button className="icon-button menu-trigger" aria-label="Abrir menú"><Menu /></button><div className="breadcrumbs"><span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button><div className="top-avatar">MS</div></div></header>
-      <div className="content-wrap">{notice && <div className="toast-message"><CheckCircle2 />{notice}</div>}{page()}</div>
+<header className="topbar">
+        <button 
+          type="button" 
+          className="icon-button menu-trigger" 
+          aria-label={sidebarOpen ? 'Cerrar menú' : 'Abrir menú'} 
+          aria-controls="erp-sidebar" 
+          aria-expanded={sidebarOpen} 
+          onClick={() => setSidebarOpen((open) => !open)}
+        >
+          <Menu />
+        </button>
+        <div className="breadcrumbs">
+          <span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong>
+        </div>
+        <div className="top-actions">
+          <button className="icon-button" aria-label="Buscar"><Search /></button>
+          <button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button>
+          <div className="top-avatar" title={`${currentUser.fullName} · ${currentUser.role}`}>{userInitials(currentUser.fullName)}</div>
+          <span className="top-user-name">{currentUser.fullName}</span>
+          {logoutButton}
+        </div>
+      </header>
+      <div className="content-wrap">
+        {notice && <div className="toast-message"><CheckCircle2 />{notice}</div>}
+        {!loaded
+          ? <section className="panel module-panel"><p className="eyebrow">Conectando</p><h1>Cargando datos del ERP...</h1></section>
+          : workspaceError
+            ? <section className="panel module-panel" role="alert"><p className="eyebrow">Error de conexión</p><h1>No se pudieron sincronizar los datos</h1><p className="subtitle">{workspaceError}</p><button className="primary-button" style={{ marginTop: 16 }} onClick={() => window.location.reload()}>Recargar datos del servidor</button></section>
+            : page()}
+      </div>
       <footer className="footer"><span>© 2024 Repostería Heydi</span><span>v1.0.0 · Managua, Nicaragua</span></footer>
     </main>
     {modal && <Modal module={modal.module} materials={materials} productNames={productNames} fields={moduleFields} form={form} setForm={setForm} onClose={() => setModal(null)} onSave={save} />}
@@ -470,28 +709,208 @@ export function ErpDashboard({ isAdmin }: { isAdmin: boolean }) {
   </div>
 }
 
-function Dashboard({ orders, records, extra, openPurchases, salesCount, salesIncome, onNew, onRevenue, onReset, onDemo }: { orders: Order[]; records: Record<string, RecordItem[]>; extra: number; openPurchases: number; salesCount: number; salesIncome: number; onNew: () => void; onRevenue: () => void; onReset: () => void; onDemo: () => void }) {
+function Dashboard({ 
+  orders, 
+  records, 
+  extra, 
+  openPurchases, 
+  salesCount, 
+  salesIncome, 
+  onNew, 
+  onRevenue, 
+  onReset, 
+  onDemo 
+}: { 
+  orders: Order[]; 
+  records: Record<string, RecordItem[]>; 
+  extra: number; 
+  openPurchases: number; 
+  salesCount: number; 
+  salesIncome: number; 
+  onNew: () => void; 
+  onRevenue: () => void; 
+  onReset: () => void; 
+  onDemo: () => void 
+}) {
   const total = Object.values(records).reduce((sum, list) => sum + list.length, 0) + extra
-  return <>
-    <section className="page-heading"><div><p className="eyebrow">Panel principal</p><h1>Buenos días, María</h1><p className="subtitle">Resumen operativo de tu panadería para hoy.</p></div><button className="primary-button" onClick={onNew}><Plus />Nueva orden de producción</button></section>
-    <section className="metric-grid">
-      {[
-        ['Registros maestros', total],
-        ['Órdenes pendientes', orders.filter((o) => o.status === 'Pendiente').length],
-        ['En proceso', orders.filter((o) => o.status === 'En proceso').length],
-        ['Finalizadas', orders.filter((o) => o.status === 'Finalizada').length],
-        ['Compras por recibir', openPurchases],
-        ['Ventas y despachos', salesCount],
-      ].map(([label, value]) => <article className="metric-card" key={String(label)}><div className="metric-icon package"><Package /></div><div className="metric-copy"><p>{label}</p><strong>{value}</strong><small>Actualizado ahora</small></div></article>)}
-      <button type="button" className="metric-card" onClick={onRevenue} style={{ width: '100%', color: 'inherit', font: 'inherit', textAlign: 'left', border: 0, cursor: 'pointer' }}><div className="metric-icon package"><CircleDollarSign /></div><div className="metric-copy"><p>Ingresos por venta</p><strong>{money(salesIncome)}</strong><small>Ver detalle de ventas</small></div></button>
-    </section>
-    <section className="panel module-panel"><div className="panel-heading"><div><h2>Accesos rápidos</h2><p>Gestiona tus catálogos y operaciones.</p></div></div><div className="quick-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}><button className="primary-button" onClick={() => onNew()}><Plus />Crear orden</button><button className="outline-button" onClick={onRevenue}><CircleDollarSign />Ver ingresos por venta</button><button className="outline-button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>Ver actividad</button><button className="outline-button" onClick={onDemo}><Download />Cargar datos de ejemplo</button><button className="outline-button" onClick={onReset}><Trash2 />Restablecer datos</button></div></section>
-  </>
+
+  return (
+    <>
+      <section className="page-heading">
+        <div>
+          <p className="eyebrow">Panel principal</p>
+          <h1>Bienvenido!</h1>
+          <p className="subtitle">Resumen operativo de tu panadería para hoy.</p>
+        </div>
+        <button className="primary-button" onClick={onNew}>
+          <Plus />Nueva orden de producción
+        </button>
+      </section>
+
+      <section className="metric-grid">
+        {[
+          ['Registros maestros', total],
+          ['Órdenes pendientes', orders.filter((o) => o.status === 'Pendiente').length],
+          ['En proceso', orders.filter((o) => o.status === 'En proceso').length],
+          ['Finalizadas', orders.filter((o) => o.status === 'Finalizada').length],
+          ['Compras por recibir', openPurchases],
+          ['Ventas y despachos', salesCount],
+        ].map(([label, value]) => (
+          <article className="metric-card" key={String(label)}>
+            <div className="metric-icon package"><Package /></div>
+            <div className="metric-copy">
+              <p>{label}</p>
+              <strong>{value}</strong>
+              <small>Actualizado ahora</small>
+            </div>
+          </article>
+        ))}
+
+        <button 
+          type="button" 
+          className="metric-card" 
+          onClick={onRevenue} 
+          style={{ width: '100%', color: 'inherit', font: 'inherit', textAlign: 'left', border: 0, cursor: 'pointer' }}
+        >
+          <div className="metric-icon package"><CircleDollarSign /></div>
+          <div className="metric-copy">
+            <p>Ingresos por venta</p>
+            <strong>{money(salesIncome)}</strong>
+            <small>Ver detalle de ventas</small>
+          </div>
+        </button>
+      </section>
+
+      <section className="panel module-panel">
+        <div className="panel-heading">
+          <div>
+            <h2>Accesos rápidos</h2>
+            <p>Gestiona tus catálogos y operaciones.</p>
+          </div>
+        </div>
+        <div className="quick-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
+          <button className="primary-button" onClick={() => onNew()}><Plus />Crear orden</button>
+          <button className="outline-button" onClick={onRevenue}><CircleDollarSign />Ver ingresos por venta</button>
+          <button className="outline-button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>Ver actividad</button>
+          <button className="outline-button" onClick={onDemo}><Download />Cargar datos de ejemplo</button>
+          <button className="outline-button" onClick={onReset}><Trash2 />Restablecer datos</button>
+        </div>
+      </section>
+    </>
+  )
 }
 
 function ModulePage({ title, items, search, setSearch, onNew, onEdit, onDelete, onSelect }: { title: string; items: RecordItem[]; search: string; setSearch: (value: string) => void; onNew: () => void; onEdit: (item: RecordItem) => void; onDelete: (id: string) => void; onSelect: (item: RecordItem) => void }) { const canCreate = Boolean(fields[title]); return <><section className="page-heading"><div><p className="eyebrow">Módulo operativo</p><h1>{title}</h1><p className="subtitle">Administra información y relaciones del módulo.</p></div>{canCreate && <button className="primary-button" onClick={onNew}><Plus />Nuevo {title === 'Productos' ? 'producto' : 'registro'}</button>}</section><section className="panel module-panel"><div className="module-toolbar"><div className="search-box"><Search /><input aria-label={`Buscar en ${title}`} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nombre, código..." /></div><button className="outline-button" onClick={() => setSearch('')}>Limpiar</button></div><div className="record-list">{items.length ? items.map((item) => <div className="record-row" key={item.id}><button className="record-main record-link" onClick={() => onSelect(item)}><div className="record-icon"><Package /></div><span><strong>{item.name}</strong><small>{item.code ?? item.id} · {item.detail}</small></span></button><Badge status={item.status} /><button className="icon-button" aria-label={`Editar ${item.name}`} onClick={() => onEdit(item)}><Edit3 /></button><button className="icon-button danger" aria-label={`Eliminar ${item.name}`} onClick={() => onDelete(item.id)}><Trash2 /></button></div>) : <div className="empty-state"><AlertTriangle />No hay registros para mostrar.</div>}</div></section></> }
 
+function UsersPage({ currentUserId, items, search, setSearch, onNew, onEdit, onDelete, onSelect, onUpdateStatus }: { currentUserId: string; items: RecordItem[]; search: string; setSearch: (value: string) => void; onNew: () => void; onEdit: (item: RecordItem) => void; onDelete: (id: string) => void; onSelect: (item: RecordItem) => void; onUpdateStatus: (id: string, status: 'approved' | 'rejected') => void }) {
+  return <>
+    <Head eyebrow="Administración" title="Usuarios" subtitle="Revisa solicitudes de registro y administra quién puede acceder al ERP.">
+      <button className="primary-button" onClick={onNew}><Plus />Crear usuario</button>
+    </Head>
+    <section className="panel module-panel">
+      <div className="module-toolbar">
+        <div className="search-box"><Search /><input aria-label="Buscar usuarios" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar por nombre, usuario o correo..." /></div>
+        <button className="outline-button" onClick={() => setSearch('')}>Limpiar</button>
+      </div>
+      <div className="table-scroll">
+        <table>
+          <thead><tr><th>Nombre</th><th>Usuario</th><th>Correo</th><th>Teléfono</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead>
+          <tbody>
+            {items.map((item) => {
+              const status = item.data?.status ?? 'approved'
+              const isProtected = item.id === currentUserId || item.data?.role === 'administrador'
+              return <tr key={item.id}>
+                <td><button className="text-button" onClick={() => onSelect(item)}>{item.name}</button></td>
+                <td>{item.data?.username ?? '—'}</td>
+                <td>{item.data?.email ?? '—'}</td>
+                <td>{item.data?.phone || '—'}</td>
+                <td>{item.data?.role ?? 'usuario'}</td>
+                <td><Badge status={status} /></td>
+                <td className="row-actions">
+                  {!isProtected && status !== 'approved' && <button className="small-action" onClick={() => onUpdateStatus(item.id, 'approved')}>Aprobar</button>}
+                  {!isProtected && status === 'pending' && <button className="small-action muted" onClick={() => onUpdateStatus(item.id, 'rejected')}>Rechazar</button>}
+                  {!isProtected && <button className="icon-button" aria-label={`Editar ${item.name}`} onClick={() => onEdit(item)}><Edit3 /></button>}
+                  {!isProtected && <button className="icon-button danger" aria-label={`Eliminar ${item.name}`} onClick={() => onDelete(item.id)}><Trash2 /></button>}
+                  {isProtected && <span className="protected-user-label">{item.id === currentUserId ? 'Sesión actual' : 'Administrador protegido'}</span>}
+                </td>
+              </tr>
+            })}
+            {!items.length && <tr><td colSpan={7}><div className="empty-state"><AlertTriangle />No hay usuarios para mostrar.</div></td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </>
+}
+
+function ProfilePage({ user, onSave }: {
+  user: { fullName: string; username: string; email: string; phone: string }
+  onSave: (updates: { fullName: string; username: string; email: string; phone: string; currentPassword: string; newPassword?: string }) => Promise<boolean>
+}) {
+  const [form, setForm] = useState({ ...user, currentPassword: '', newPassword: '', confirmPassword: '' })
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setForm((current) => ({ ...current, ...user, currentPassword: '', newPassword: '', confirmPassword: '' }))
+  }, [user])
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setError('')
+    if (!form.currentPassword) {
+      setError('Ingresa tu contraseña actual para guardar los cambios.')
+      return
+    }
+    if (form.newPassword && form.newPassword !== form.confirmPassword) {
+      setError('La nueva contraseña y su confirmación no coinciden.')
+      return
+    }
+    if (form.newPassword && form.newPassword.length < 12) {
+      setError('La nueva contraseña debe tener al menos 12 caracteres.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const saved = await onSave({
+        fullName: form.fullName,
+        username: form.username,
+        email: form.email,
+        phone: form.phone,
+        currentPassword: form.currentPassword,
+        ...(form.newPassword ? { newPassword: form.newPassword } : {}),
+      })
+      if (saved) setForm((current) => ({ ...current, currentPassword: '', newPassword: '', confirmPassword: '' }))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return <>
+    <Head eyebrow="Cuenta personal" title="Mi cuenta" subtitle="Actualiza tus datos y contraseña. Se te pedirá la contraseña actual para confirmar los cambios." />
+    <form className="panel module-panel profile-form" onSubmit={submit}>
+      <div className="form-grid">
+        <label>Nombre completo<input required minLength={2} maxLength={100} value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} /></label>
+        <label>Nombre de usuario<input required minLength={3} maxLength={32} pattern="[a-zA-Z0-9._-]{3,32}" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} /></label>
+        <label>Correo electrónico<input required type="email" maxLength={254} value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} /></label>
+        <label>Teléfono<input maxLength={40} value={form.phone} onChange={(event) => setForm({ ...form, phone: event.target.value })} /></label>
+      </div>
+      <h2>Cambiar contraseña</h2>
+      <p className="profile-hint">Deja estos campos vacíos si no deseas cambiarla. Debe tener al menos 12 caracteres.</p>
+      <div className="form-grid">
+        <label>Contraseña actual<input required type="password" autoComplete="current-password" value={form.currentPassword} onChange={(event) => setForm({ ...form, currentPassword: event.target.value })} /></label>
+        <label>Nueva contraseña<input type="password" autoComplete="new-password" minLength={12} value={form.newPassword} onChange={(event) => setForm({ ...form, newPassword: event.target.value })} /></label>
+        <label>Confirmar nueva contraseña<input type="password" autoComplete="new-password" minLength={12} value={form.confirmPassword} onChange={(event) => setForm({ ...form, confirmPassword: event.target.value })} /></label>
+      </div>
+      {error && <p className="login-error profile-error" role="alert">{error}</p>}
+      <div className="modal-actions"><button className="primary-button" type="submit" disabled={saving}>{saving ? 'Guardando…' : 'Guardar cambios'}</button></div>
+    </form>
+  </>
+}
+
 function OrdersPage({ orders, onNew, updateOrder, onFinalize }: { orders: Order[]; onNew: () => void; updateOrder: (id: string, status: OrderStatus) => void; onFinalize: (order: Order) => void }) { return <><section className="page-heading"><div><p className="eyebrow">Producción</p><h1>Órdenes de producción</h1><p className="subtitle">Inicia, finaliza o cancela órdenes.</p></div><button className="primary-button" onClick={onNew}><Plus />Nueva orden</button></section><section className="order-cards">{(['Pendiente', 'En proceso', 'Finalizada', 'Cancelada'] as OrderStatus[]).map((status) => <div className="mini-stat" key={status}><span>{status}</span><strong>{orders.filter((o) => o.status === status).length}</strong></div>)}</section><section className="panel module-panel"><div className="table-scroll"><table><thead><tr><th>Orden</th><th>Producto</th><th>Planificado</th><th>Producido</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{orders.map((order) => <tr key={order.id}><td>{order.id}</td><td>{order.product}</td><td>{order.qty} und</td><td>{order.produced} und</td><td><Badge status={order.status} /></td><td className="row-actions">{order.status === 'Pendiente' && <button className="small-action" onClick={() => updateOrder(order.id, 'En proceso')}>Iniciar</button>}{order.status === 'En proceso' && <button className="small-action" onClick={() => onFinalize(order)}>Finalizar</button>}{!['Finalizada', 'Cancelada'].includes(order.status) && <button className="small-action muted" onClick={() => updateOrder(order.id, 'Cancelada')}><Pause />Cancelar</button>}</td></tr>)}</tbody></table></div></section></> }
+
 
 function EntryPage({ materials, movements, onAdd }: { materials: Material[]; movements: Movement[]; onAdd: (code: string, qty: number, unitCost: number, ref: string) => boolean }) {
   const [code, setCode] = useState(''); const [qty, setQty] = useState(''); const [cost, setCost] = useState(''); const [ref, setRef] = useState('')
@@ -720,7 +1139,7 @@ function SalesPage({ sales, customers, products, stock, onCreate, onViewRevenue 
 function MovementsPage({ movements }: { movements: Movement[] }) {
   const [type, setType] = useState('Todos')
   const rows = movements.filter((m) => type === 'Todos' || m.type === type)
-  return <><Head eyebrow="Inventario" title="Movimientos" subtitle="Kardex único: compras recibidas, consumo de insumos, producción, ventas y despachos."><select style={{ ...inputBox, width: 200 }} aria-label="Filtrar por tipo" value={type} onChange={(event) => setType(event.target.value)}>{['Todos', 'Entrada', 'Consumo', 'Producción', 'Liberación', 'Retrabajo', 'Retorno retrabajo', 'Scrap', 'Venta', 'Despacho'].map((t) => <option key={t} value={t}>{t}</option>)}</select></Head><Table head={['Fecha', 'Tipo', 'Código', 'Ítem', 'Cantidad', 'Valor', 'Referencia']} rows={rows.map((m) => [m.date, m.type, m.code, m.material, `${num(m.qty)} ${m.unit}`, money(m.total), m.ref])} empty="No hay movimientos todavía." /></>
+  return <><Head eyebrow="Inventario" title="Movimientos" subtitle="Kardex único: compras recibidas, consumo, producción, ventas, despachos y devoluciones."><select style={{ ...inputBox, width: 200 }} aria-label="Filtrar por tipo" value={type} onChange={(event) => setType(event.target.value)}>{['Todos', 'Entrada', 'Consumo', 'Producción', 'Liberación', 'Retrabajo', 'Retorno retrabajo', 'Scrap', 'Venta', 'Despacho', 'Devolución'].map((t) => <option key={t} value={t}>{t}</option>)}</select></Head><Table head={['Fecha', 'Tipo', 'Código', 'Ítem', 'Cantidad', 'Valor', 'Referencia']} rows={rows.map((m) => [m.date, m.type, m.code, m.material, `${num(m.qty)} ${m.unit}`, money(m.total), m.ref])} empty="No hay movimientos todavía." /></>
 }
 
 function QualityPage({ products, qc, stock, required, log, onToggle, onAction }: { products: string[]; qc: Record<string, QcBuckets>; stock: Record<string, number>; required: Record<string, boolean>; log: QcRecord[]; onToggle: (name: string) => void; onAction: (action: QcAction, product: string, qty: number, reason: string, source: 'pending' | 'rework' | 'available') => boolean }) {

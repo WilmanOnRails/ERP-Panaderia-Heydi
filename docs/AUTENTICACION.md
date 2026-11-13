@@ -37,8 +37,47 @@ exige una contraseña de al menos 12 caracteres y máximo 72 bytes. Las cuentas
 creadas pueden iniciar sesión con su nombre de usuario o correo. Al actualizar,
 la contraseña es opcional; si no se envía, se conserva la existente.
 
-Las respuestas nunca incluyen el hash de contraseña. El sistema impide que un
-administrador elimine su propia cuenta o deje al sistema sin administradores.
+En `/login`, cualquier persona puede solicitar una cuenta con **Regístrate**.
+La solicitud crea un usuario `pending` con rol `usuario`; no puede acceder al
+ERP hasta que un administrador lo apruebe en el módulo **Usuarios**. El
+administrador también puede rechazar solicitudes, aprobarlas posteriormente o
+eliminarlas. Los registros existentes conservan acceso mediante la migración
+que los marca como aprobados.
+
+Las respuestas nunca incluyen el hash de contraseña. Las cuentas con rol
+administrador están protegidas: no pueden editarse ni eliminarse desde el módulo
+ni desde la API. Tampoco se puede modificar desde el módulo la cuenta de la
+sesión actual.
+
+Los usuarios no administradores pueden abrir **Mi cuenta** desde la navegación
+del ERP para cambiar su nombre, usuario, correo, teléfono o contraseña. Para
+guardar cualquier cambio deben confirmar su contraseña actual; la nueva
+contraseña, si se cambia, debe tener al menos 12 caracteres y máximo 72 bytes.
+
+## Recuperar contraseña por correo
+
+En `/login`, selecciona **¿Olvidaste tu contraseña?** e ingresa el correo de la
+cuenta. Si existe una cuenta aprobada asociada a ese correo, recibirá un enlace
+válido durante 30 minutos. La respuesta no confirma si el correo está
+registrado. El enlace es de un solo uso; al generar otro, los enlaces anteriores
+quedan invalidados. La nueva contraseña debe tener al menos 12 caracteres y
+como máximo 72 bytes.
+
+Configura estas variables en `.env` para desarrollo y en el servicio web de
+Render para producción. Obtén `RESEND_API_KEY` desde el panel de Resend y
+verifica el dominio remitente antes de usarlo con destinatarios reales:
+
+| Variable | Descripción |
+| --- | --- |
+| `RESEND_API_KEY` | Clave de API de Resend; mantenla privada |
+| `RESEND_FROM` | Remitente verificado en Resend, por ejemplo `Repostería Heydi <no-reply@tu-dominio.com>` |
+| `APP_URL` | URL base pública de la aplicación, por ejemplo `https://tu-app.onrender.com` |
+
+No agregues la clave al repositorio. En desarrollo, usa `APP_URL=http://localhost:3000`;
+en Render, configura la URL pública HTTPS del servicio. Aplica la migración de
+tokens con `npm run db:migrate:deploy` antes de usar el flujo. El endpoint
+limita las solicitudes por dirección IP y correo; en despliegues con varias
+instancias, usa también un limitador compartido en el proxy o proveedor.
 
 El asistente solo crea una cuenta con el rol `administrador`. Si el usuario,
 código o correo ya existe, se detiene sin cambiar cuentas existentes. No se

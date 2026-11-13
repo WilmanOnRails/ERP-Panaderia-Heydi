@@ -1,0 +1,26 @@
+# Dependencias y entornos locales
+node_modules
+.next
+.pnpm-store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Control de versiones
+.git
+.gitignore
+.github
+
+# Archivos de entorno locales (las credenciales deben pasarse en runtime)
+.env*
+
+# Documentación y archivos de diseño o workspace local
+docs/
+README.md
+*.md
+
+# Entornos virtuales, editores y sistemas operativos
+.vscode/
+.DS_Store
+Thumbs.db

@@ -66,3 +66,28 @@ instalación/build y no uses `migrate dev` en producción.
 
 Las migraciones futuras se generan en desarrollo con `npm run db:migrate:dev
 -- --name descripcion_del_cambio`; revisa y guarda el SQL generado en Git.
+
+## Construir y ejecutar la imagen Docker
+
+Desde la raíz del proyecto:
+
+```powershell
+docker build -t erp-panaderia-heydi:local .
+docker run --name erp-panaderia-heydi -p 3000:3000 --env-file .env.docker erp-panaderia-heydi:local
+```
+
+Crea `.env.docker` localmente, fuera de Git, con `DATABASE_URL`, `SESSION_SECRET`
+(mínimo 32 bytes) y `API_KEY` (mínimo 32 caracteres). Agrega `APP_URL`,
+`RESEND_API_KEY` y `RESEND_FROM` si habilitas recuperación de contraseña por
+correo. La imagen no incluye archivos `.env`; las variables se inyectan al
+ejecutar el contenedor. No uses credenciales de prueba en producción.
+
+Antes de iniciar la aplicación con una base nueva o después de desplegar una
+migración, aplícala desde un entorno con acceso a la base:
+
+```powershell
+npm run db:migrate:deploy
+```
+
+La imagen ejecuta Next.js en modo standalone como usuario sin privilegios y
+expone el puerto `3000`.

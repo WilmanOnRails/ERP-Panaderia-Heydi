@@ -9,6 +9,7 @@ export type AuthenticatedUser = {
   id: number
   fullName: string
   username: string
+  phone: string
   email: string
   role: string
 }
@@ -68,10 +69,12 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> 
 
   const user = await prisma.erpUser.findUnique({
     where: { id: userId },
-    select: { id: true, fullName: true, username: true, email: true, role: true },
+    select: { id: true, fullName: true, username: true, phone: true, email: true, role: true, status: true },
   })
 
-  return user
+  if (!user || user.status !== "approved") return null
+  const { status: _status, ...authenticatedUser } = user
+  return authenticatedUser
 }
 
 export async function requireAuthenticatedUser() {
