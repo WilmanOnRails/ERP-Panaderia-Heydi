@@ -26,6 +26,7 @@ El menú lateral agrupa las funciones por áreas:
 
 - **Inicio:** vuelve al dashboard.
 - **Datos maestros:** productos, materias primas, recetas/BOM, rutas, almacenes, proveedores y clientes.
+- **Facturación:** cotizaciones, facturas, pagos, devoluciones y notas de crédito.
 - **Inventario:** existencias, entradas, salidas y movimientos.
 - **Producción:** órdenes de producción, disponibilidad de materiales, consumo de materias primas y productos terminados.
 - **Reportes:** reportes de gestión.
@@ -155,7 +156,31 @@ Campos del formulario:
 
 Al seleccionar el nombre de un cliente se muestra toda su información registrada.
 
-## 6. Inventario
+## 6. Facturación
+
+Antes de crear documentos, registra los clientes y productos en **Datos maestros**.
+
+### Cotizaciones
+
+Selecciona el cliente, agrega productos, cantidades y precios; configura el descuento y el impuesto porcentual del documento. Crear una cotización no afecta el inventario. Una cotización pendiente puede convertirse una sola vez en factura; la conversión conserva sus líneas, descuento e impuesto.
+
+### Facturación
+
+Puedes emitir una factura directamente o convertir una cotización. La factura valida que haya existencias y descuenta del inventario las cantidades facturadas. Los documentos se numeran con prefijos `COT` y `FAC`.
+
+Estos son documentos internos de gestión: no son comprobantes fiscales ni se transmiten a la DGI. El porcentaje de impuesto se configura en cada documento; confirma las tasas aplicables con tu asesoría contable.
+
+### Registro de pagos
+
+Selecciona una factura pendiente, indica el monto, método de pago y una referencia opcional. Se admiten pagos parciales; no se puede registrar un pago superior al saldo pendiente.
+
+### Devoluciones y notas de crédito
+
+Selecciona la factura y registra las cantidades devueltas. No se puede devolver más de lo facturado ni volver a devolver unidades ya acreditadas. Cada nota de crédito reduce el saldo de la factura y devuelve las unidades al inventario. Si la factura ya se pagó, el exceso se muestra como saldo a favor del cliente; el módulo no procesa reembolsos de efectivo.
+
+Los documentos y pagos de este módulo se guardan en el almacenamiento local del navegador, igual que las demás operaciones locales del ERP; no se sincronizan entre navegadores o dispositivos.
+
+## 7. Inventario
 
 ### Existencias
 
@@ -187,7 +212,7 @@ Al guardar una salida se descuenta la cantidad correspondiente.
 
 Presenta un resumen cronológico de entradas, salidas, ajustes y movimientos generados por producción. Cada movimiento debe indicar tipo, cantidad, referencia y fecha.
 
-## 7. Producción
+## 8. Producción
 
 ### Órdenes de producción
 
@@ -233,7 +258,7 @@ Muestra los productos terminados provenientes de la producción.
 
 La opción **Registrar ingreso** permite indicar el producto, cantidad, almacén y referencia. Al confirmar, la cantidad aparece automáticamente en existencias y se genera una entrada de inventario.
 
-## 8. Reportes de gestión
+## 9. Reportes de gestión
 
 Resume la operación del sistema:
 
@@ -246,7 +271,7 @@ Resume la operación del sistema:
 
 Los filtros de fecha, módulo o tipo de movimiento permiten consultar información específica. El reporte puede exportarse en PDF o Excel desde los botones de exportación.
 
-## 9. Usuarios y roles
+## 10. Usuarios y roles
 
 ### Registrar usuario
 
@@ -266,7 +291,7 @@ Roles:
 
 Los permisos deben validarse también en el servidor; ocultar una opción del menú no sustituye el control de autorización.
 
-## 10. Recomendación de flujo operativo
+## 11. Recomendación de flujo operativo
 
 1. Crear productos, materias primas y almacenes.
 2. Registrar proveedores y clientes.
@@ -279,7 +304,7 @@ Los permisos deben validarse también en el servidor; ocultar una opción del me
 9. Revisar existencias y movimientos.
 10. Consultar o exportar el reporte de gestión.
 
-## 11. Convenciones de uso
+## 12. Convenciones de uso
 
 - Utilizar códigos únicos para productos, materias primas, recetas, rutas, almacenes y clientes.
 - Registrar entradas y salidas con una referencia clara.

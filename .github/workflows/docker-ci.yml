@@ -1,0 +1,31 @@
+name: CI Docker
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Convertir nombre de imagen a minúsculas
+        run: |
+          IMAGE_NAME="ghcr.io/${{ github.repository }}"
+          echo "IMAGE=$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: ${{ env.IMAGE }}:latest
