@@ -79,6 +79,14 @@ tokens con `npm run db:migrate:deploy` antes de usar el flujo. El endpoint
 limita las solicitudes por dirección IP y correo; en despliegues con varias
 instancias, usa también un limitador compartido en el proxy o proveedor.
 
+Al aprobar una solicitud de registro desde **Usuarios y roles**, el sistema
+envía un correo al usuario con un enlace para iniciar sesión. Este envío usa
+`RESEND_API_KEY`, `RESEND_FROM` y `APP_URL`. Si Resend no está disponible, la
+cuenta queda aprobada y el administrador recibe un aviso para que pueda revisar
+el envío. Para enviar a otras direcciones además de la cuenta propietaria de
+Resend, verifica un dominio en Resend y configura `RESEND_FROM` con una
+dirección de ese dominio.
+
 El asistente solo crea una cuenta con el rol `administrador`. Si el usuario,
 código o correo ya existe, se detiene sin cambiar cuentas existentes. No se
 incluyen credenciales predeterminadas ni se almacena la contraseña en el

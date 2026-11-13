@@ -138,7 +138,7 @@ export async function updateUser(id: number, input: unknown, actorId: number) {
     await assertUniqueUserFields(transaction, data, id)
 
     const { password, ...userData } = data
-    return transaction.erpUser.update({
+    const user = await transaction.erpUser.update({
       where: { id },
       data: {
         ...userData,
@@ -146,6 +146,7 @@ export async function updateUser(id: number, input: unknown, actorId: number) {
       },
       select: safeUserSelect,
     })
+    return { user, approvedNow: current.status === "pending" && user.status === "approved" }
   }, { isolationLevel: "Serializable" })
 }
 

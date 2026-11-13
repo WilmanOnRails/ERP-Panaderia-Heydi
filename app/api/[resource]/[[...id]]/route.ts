@@ -5,6 +5,7 @@ import { apiError, handleApiError, readJsonBody } from "@/lib/api/http"
 import { apiResources } from "@/lib/api/resources"
 import { createUser, deleteUser, getUser, listUsers, updateUser } from "@/lib/api/users"
 import { getAuthenticatedUser } from "@/lib/auth/session"
+import { createResetMailer, sendAccountApprovedEmail } from "@/lib/auth/password-reset-email"
 import { db } from "@/lib/db"
 import { inventoryMovements, products, productionOrders } from "@/lib/db/schema"
 
@@ -72,8 +73,34 @@ async function dispatch(request: Request, context: RouteContext, method: "GET" |
     if (id === undefined) return methodNotAllowed(["GET", "POST"])
     if (method === "PATCH") {
       try {
-        const record = await updateUser(id, await readJsonBody(request), user.id)
-        return record ? NextResponse.json({ data: record }) : apiError(404, "not_found", "No se encontró el usuario.")
+        const result = await updateUser(id, await readJsonBody(request), user.id)
+        if (!result) return apiError(404, "not_found", "No se encontró el usuario.")
+
+        let emailNotification: "sent" | "failed" | "not_configured" | "domain_not_verified" | undefined
+        if (result.approvedNow) {
+          try {
+            const mailer = createResetMailer()
+            await sendAccountApprovedEmail({
+              to: result.user.email,
+              fullName: result.user.fullName,
+              ...mailer,
+            })
+            emailNotification = "sent"
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : ""
+            emailNotification = errorMessage.includes("only send testing emails")
+              ? "domain_not_verified"
+              : process.env.RESEND_API_KEY && process.env.RESEND_FROM && process.env.APP_URL
+                ? "failed"
+                : "not_configured"
+            console.error("Account approval email delivery failed", error)
+          }
+        }
+
+        return NextResponse.json({
+          data: result.user,
+          ...(emailNotification ? { emailNotification } : {}),
+        })
       } catch (error) {
         return handleApiError(error)
       }

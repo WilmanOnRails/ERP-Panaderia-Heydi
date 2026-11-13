@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
-import { Archive, Bell, Boxes, ChevronDown, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download, FileText, CreditCard, Receipt } from 'lucide-react'
+import { Archive, Bell, Boxes, ChevronDown, CircleDollarSign, ClipboardList, Edit3, Factory, LayoutDashboard, Menu, Package, Pause, Plus, Search, ShoppingBasket, Trash2, Truck, Users, X, CheckCircle2, AlertTriangle, Download, FileText, CreditCard, Receipt } from 'lucide-react'
 import { BillingModule } from '@/components/billing-module'
 import type { BillingData } from '@/components/billing-module'
 
@@ -399,7 +399,17 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
           }
           : item),
       }))
-      notify(status === 'approved' ? 'Cuenta aprobada; ya puede iniciar sesión' : 'Solicitud rechazada')
+      if (status === 'approved') {
+        notify(result.emailNotification === 'sent'
+          ? 'Cuenta aprobada; se envió un correo de notificación'
+          : result.emailNotification === 'domain_not_verified'
+            ? 'Cuenta aprobada, pero Resend está en modo de prueba. Verifica un dominio y configura RESEND_FROM.'
+          : result.emailNotification === 'failed' || result.emailNotification === 'not_configured'
+            ? 'Cuenta aprobada, pero no se pudo enviar el correo de notificación'
+            : 'Cuenta aprobada; ya puede iniciar sesión')
+      } else {
+        notify('Solicitud rechazada')
+      }
     } catch (error) {
       notify(error instanceof Error ? error.message : 'No se pudo actualizar la solicitud.')
     }

@@ -54,6 +54,27 @@ export async function sendPasswordResetEmail(input: {
   if (error) throw new Error(`Resend no pudo enviar el correo: ${error.message}`)
 }
 
+export async function sendAccountApprovedEmail(input: {
+  to: string
+  fullName: string
+  appUrl: string
+  from: string
+  resend: Resend
+}) {
+  const loginUrl = new URL("/login", input.appUrl).toString()
+  const safeName = escapeHtml(input.fullName)
+  const safeLoginUrl = escapeHtml(loginUrl)
+
+  const { error } = await input.resend.emails.send({
+    from: input.from,
+    to: input.to,
+    subject: "Tu cuenta ha sido aprobada - Repostería Heydi",
+    text: `Hola ${input.fullName},\n\nTu solicitud para acceder a Repostería Heydi ha sido aprobada. Ya puedes iniciar sesión en el sistema:\n${loginUrl}`,
+    html: `<p>Hola ${safeName},</p><p>Tu solicitud para acceder a Repostería Heydi ha sido aprobada. Ya puedes iniciar sesión en el sistema.</p><p><a href="${safeLoginUrl}">Iniciar sesión</a></p>`,
+  })
+  if (error) throw new Error(`Resend no pudo enviar el correo: ${error.message}`)
+}
+
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (character) => ({
     "&": "&amp;",
