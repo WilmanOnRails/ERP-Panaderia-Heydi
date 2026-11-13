@@ -5,7 +5,7 @@ node_modules
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-lock.yaml
+package-lock.json
 
 # Control de versiones
 .git
@@ -13,8 +13,7 @@ pnpm-lock.yaml
 .github
 
 # Archivos de entorno locales (las credenciales deben pasarse en runtime)
-.env
-.env*.local
+.env*
 
 # Documentación y archivos de diseño o workspace local
 docs/
