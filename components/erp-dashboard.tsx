@@ -105,6 +105,7 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
   const [currentUser, setCurrentUser] = useState(initialUser)
   const [active, setActive] = useState('Dashboard'); const [records, setRecords] = useState(initial); const [orders, setOrders] = useState(initialOrders); const [materials, setMaterials] = useState(initialMaterials); const [movements, setMovements] = useState<Movement[]>([]); const [search, setSearch] = useState(''); const [notice, setNotice] = useState(''); const [modal, setModal] = useState<{ module: string; item?: RecordItem } | null>(null); const [detail, setDetail] = useState<RecordItem | null>(null); const [finalizing, setFinalizing] = useState<Order | null>(null); const [form, setForm] = useState<Record<string, string>>({}); const [loaded, setLoaded] = useState(false)
   const [expandedGroup, setExpandedGroup] = useState('Panel principal')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [purchases, setPurchases] = useState<Purchase[]>([]); const [sales, setSales] = useState<Sale[]>([]); const [productStock, setProductStock] = useState<Record<string, number>>({}); const [purchaseDraft, setPurchaseDraft] = useState<{ code: string; qty: number }[] | null>(null)
   const [qc, setQc] = useState<Record<string, QcBuckets>>({}); const [qcRequired, setQcRequired] = useState<Record<string, boolean>>({}); const [qcLog, setQcLog] = useState<QcRecord[]>([])
   const [billing, setBilling] = useState<BillingData>({ quotes: [], invoices: [], payments: [], creditNotes: [] })
@@ -212,6 +213,7 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
   const selectPage = (label: string) => {
     setActive(label)
     setSearch('')
+    setSidebarOpen(false)
     const group = groups.find(({ items }) => items.some(([item]) => item === label))
     if (group) setExpandedGroup(group.label)
   }
@@ -620,8 +622,8 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
     }
   }
   return <div className="erp-shell">
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><span>H</span></div><div><strong>Repostería Heydi</strong><small>SISTEMA ERP DE PRODUCCIÓN</small></div></div>
+    <aside className={`sidebar ${sidebarOpen ? 'is-open' : ''}`} id="erp-sidebar">
+      <div className="brand"><div className="brand-mark"><span>H</span></div><div><strong>Repostería Heydi</strong><small>SISTEMA ERP DE PRODUCCIÓN</small></div><button type="button" className="icon-button mobile-close" aria-label="Cerrar menú" onClick={() => setSidebarOpen(false)}><X /></button></div>
       <nav aria-label="Navegación principal">
         {groups.map((group, index) => {
           const isExpanded = expandedGroup === group.label
@@ -642,7 +644,7 @@ export function ErpDashboard({ currentUser: initialUser, isAdmin, logoutButton }
       <div className="sidebar-bottom"><div className="user-card"><div className="avatar">{userInitials(currentUser.fullName)}</div><div><strong>{currentUser.fullName}</strong><small>{currentUser.role === 'administrador' ? 'Administrador' : 'Usuario'} · {currentUser.username}</small></div></div></div>
     </aside>
     <main className="main-content">
-      <header className="topbar"><button className="icon-button menu-trigger" aria-label="Abrir menú"><Menu /></button><div className="breadcrumbs"><span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Buscar"><Search /></button><button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button><div className="top-avatar" title={`${currentUser.fullName} · ${currentUser.role}`}>{userInitials(currentUser.fullName)}</div><span className="top-user-name">{currentUser.fullName}</span>{logoutButton}</div></header>
+      <header className="topbar"><button type="button" className="icon-button menu-trigger" aria-label={sidebarOpen ? 'Cerrar menú' : 'Abrir menú'} aria-controls="erp-sidebar" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen((open) => !open)}><Menu /></button><div className="breadcrumbs"><span>Sistema ERP de Producción</span><b>/</b><strong>{active}</strong></div><div className="top-actions"><button className="icon-button" aria-label="Buscar"><Search /></button><button className="icon-button" aria-label="Notificaciones" onClick={() => nav('Existencias')}><Bell /></button><div className="top-avatar" title={`${currentUser.fullName} · ${currentUser.role}`}>{userInitials(currentUser.fullName)}</div><span className="top-user-name">{currentUser.fullName}</span>{logoutButton}</div></header>
       <div className="content-wrap">
         {notice && <div className="toast-message"><CheckCircle2 />{notice}</div>}
         {!loaded
